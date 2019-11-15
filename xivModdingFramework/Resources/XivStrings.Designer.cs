@@ -241,6 +241,15 @@ namespace xivModdingFramework.Resources {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Automaton Queen.
+        /// </summary>
+        internal static string Automaton_Queen {
+            get {
+                return ResourceManager.GetString("Automaton_Queen", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Bahamut-Egi.
         /// </summary>
         internal static string Bahamut_Egi {
@@ -453,6 +462,15 @@ namespace xivModdingFramework.Resources {
         internal static string CraftAction {
             get {
                 return ResourceManager.GetString("CraftAction", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Demi-Phoenix.
+        /// </summary>
+        internal static string Demi_Phoenix {
+            get {
+                return ResourceManager.GetString("Demi_Phoenix", resourceCulture);
             }
         }
         
@@ -2001,6 +2019,15 @@ namespace xivModdingFramework.Resources {
         internal static string Sephirot_Egi {
             get {
                 return ResourceManager.GetString("Sephirot_Egi", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Seraph.
+        /// </summary>
+        internal static string Seraph {
+            get {
+                return ResourceManager.GetString("Seraph", resourceCulture);
             }
         }
         

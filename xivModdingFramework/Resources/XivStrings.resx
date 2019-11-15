@@ -864,4 +864,13 @@
   <data name="TailMtrlFolderVar" xml:space="preserve">
     <value>chara/human/c{0}/obj/tail/t{1}/material/v{2}</value>
   </data>
+  <data name="Automaton_Queen" xml:space="preserve">
+    <value>Automaton Queen</value>
+  </data>
+  <data name="Demi_Phoenix" xml:space="preserve">
+    <value>Demi-Phoenix</value>
+  </data>
+  <data name="Seraph" xml:space="preserve">
+    <value>Seraph</value>
+  </data>
 </root>
