@@ -330,8 +330,7 @@ namespace xivModdingFramework.Mods.FileTypes
                                 var line = streamReader.ReadLine();
                                 if (line.ToLower().Contains("version"))
                                 {
-                                    //mpInfo = JsonConvert.DeserializeObject<ModPackInfo>(line);
-                                    return null;
+                                    // Skip this line
                                 }
                                 else
                                 {
