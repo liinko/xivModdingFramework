@@ -19,6 +19,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using xivModdingFramework.Cache;
 using xivModdingFramework.Exd.Enums;
 using xivModdingFramework.Exd.FileTypes;
 using xivModdingFramework.General;
@@ -27,6 +28,7 @@ using xivModdingFramework.General.Enums;
 using xivModdingFramework.Helpers;
 using xivModdingFramework.Items.DataContainers;
 using xivModdingFramework.Items.Enums;
+using xivModdingFramework.Items.Interfaces;
 using xivModdingFramework.Resources;
 using xivModdingFramework.SqPack.FileTypes;
 using xivModdingFramework.Textures.DataContainers;
@@ -53,21 +55,32 @@ namespace xivModdingFramework.Items.Categories
             _xivLanguage = xivLanguage;
             _index = new Index(_gameDirectory);
         }
+        public async Task<List<XivGear>> GetGearList(string substring = null)
+        {
+            var cache = new XivCache(_gameDirectory, _xivLanguage);
+
+            return await cache.GetCachedGearList(substring);
+        }
 
         /// <summary>
         /// A getter for available gear in the Item exd files
         /// </summary>
         /// <returns>A list containing XivGear data</returns>
-        public async Task<List<XivGear>> GetGearList()
+        public async Task<List<XivGear>> GetUnCachedGearList()
         {
             // These are the offsets to relevant data
             // These will need to be changed if data gets added or removed with a patch
             const int modelDataCheckOffset = 30;
-            const int dataLength = 160;
+            int dataLength = 168;
             const int nameDataOffset = 14;
             const int modelDataOffset = 24;
             const int iconDataOffset = 136;
-            const int slotDataOffset = 154;
+            int slotDataOffset = 156;
+            if(_xivLanguage == XivLanguage.Chinese)
+            {
+                dataLength = 160;
+                slotDataOffset = 154;
+            }
 
             var xivGearList = new List<XivGear>();
 
@@ -90,7 +103,8 @@ namespace xivModdingFramework.Items.Categories
 
                 var xivGear = new XivGear
                 {
-                    Category = XivStrings.Gear,
+                    ExdID = item.Key,
+                    PrimaryCategory = XivStrings.Gear,
                     ModelInfo = primaryMi,
                     SecondaryModelInfo = secondaryMi
                 };
@@ -118,29 +132,29 @@ namespace xivModdingFramework.Items.Categories
                     br.BaseStream.Seek(-8, SeekOrigin.Current);
 
                     // Primary Blank
-                    primaryMi.Unused = br.ReadInt16();
+                    var unused = br.ReadInt16();
 
                     // Primary Variant for weapon, blank otherwise
                     var weaponVariant = br.ReadInt16();
 
                     if (weaponVariant != 0)
                     {
-                        primaryMi.Variant = weaponVariant;
+                        primaryMi.ImcSubsetID = weaponVariant;
                         isWeapon = true;
                     }
 
                     // Primary Body if weapon, Variant otherwise
                     if (isWeapon)
                     {
-                        primaryMi.Body = br.ReadInt16();
+                        primaryMi.SecondaryID = br.ReadInt16();
                     }
                     else
                     {
-                        primaryMi.Variant = br.ReadInt16();
+                        primaryMi.ImcSubsetID = br.ReadInt16();
                     }
 
                     // Primary Model ID
-                    primaryMi.ModelID = br.ReadInt16();
+                    primaryMi.PrimaryID = br.ReadInt16();
 
                     // Secondary Model Key
                     isWeapon = false;
@@ -148,29 +162,29 @@ namespace xivModdingFramework.Items.Categories
                     br.BaseStream.Seek(-8, SeekOrigin.Current);
 
                     // Secondary Blank
-                    secondaryMi.Unused = br.ReadInt16();
+                    var unused2 = br.ReadInt16();
 
                     // Secondary Variant for weapon, blank otherwise
                     weaponVariant = br.ReadInt16();
 
                     if (weaponVariant != 0)
                     {
-                        secondaryMi.Variant = weaponVariant;
+                        secondaryMi.ImcSubsetID = weaponVariant;
                         isWeapon = true;
                     }
 
                     // Secondary Body if weapon, Variant otherwise
                     if (isWeapon)
                     {
-                        secondaryMi.Body = br.ReadInt16();
+                        secondaryMi.SecondaryID = br.ReadInt16();
                     }
                     else
                     {
-                        secondaryMi.Variant = br.ReadInt16();
+                        secondaryMi.ImcSubsetID = br.ReadInt16();
                     }
 
                     // Secondary Model ID
-                    secondaryMi.ModelID = br.ReadInt16();
+                    secondaryMi.PrimaryID = br.ReadInt16();
 
                     // Icon
                     br.BaseStream.Seek(iconDataOffset, SeekOrigin.Begin);
@@ -184,7 +198,7 @@ namespace xivModdingFramework.Items.Categories
                     if (slotNum == 6) return;
 
                     xivGear.EquipSlotCategory = slotNum;
-                    xivGear.ItemCategory = _slotNameDictionary.ContainsKey(slotNum) ? _slotNameDictionary[slotNum] : "Unknown";
+                    xivGear.SecondaryCategory = _slotNameDictionary.ContainsKey(slotNum) ? _slotNameDictionary[slotNum] : "Unknown";
 
                     // Gear Name
                     var gearNameOffset = dataLength + nameOffset;
@@ -192,6 +206,7 @@ namespace xivModdingFramework.Items.Categories
                     br.BaseStream.Seek(gearNameOffset, SeekOrigin.Begin);
                     var nameString = Encoding.UTF8.GetString(br.ReadBytes(gearNameLength)).Replace("\0", "");
                     xivGear.Name = new string(nameString.Where(c => !char.IsControl(c)).ToArray());
+                    xivGear.Name = xivGear.Name.Trim();
 
                     lock (_gearLock)
                     {
@@ -216,9 +231,9 @@ namespace xivModdingFramework.Items.Categories
             var xivGear = new XivGear
             {
                 Name = "SmallClothes Body",
-                Category = XivStrings.Gear,
-                ItemCategory = _slotNameDictionary[4],
-                ModelInfo = new XivModelInfo { ModelID = 0, Variant = 1, Body = 0}
+                PrimaryCategory = XivStrings.Gear,
+                SecondaryCategory = _slotNameDictionary[4],
+                ModelInfo = new XivModelInfo { PrimaryID = 0, ImcSubsetID = 1, SecondaryID = 0}
             };
 
             xivGearList.Add(xivGear);
@@ -226,9 +241,9 @@ namespace xivModdingFramework.Items.Categories
             xivGear = new XivGear
             {
                 Name = "SmallClothes Hands",
-                Category = XivStrings.Gear,
-                ItemCategory = _slotNameDictionary[5],
-                ModelInfo = new XivModelInfo { ModelID = 0, Variant = 1, Body = 0 }
+                PrimaryCategory = XivStrings.Gear,
+                SecondaryCategory = _slotNameDictionary[5],
+                ModelInfo = new XivModelInfo { PrimaryID = 0, ImcSubsetID = 1, SecondaryID = 0 }
             };
 
             xivGearList.Add(xivGear);
@@ -236,9 +251,9 @@ namespace xivModdingFramework.Items.Categories
             xivGear = new XivGear
             {
                 Name = "SmallClothes Legs",
-                Category = XivStrings.Gear,
-                ItemCategory = _slotNameDictionary[7],
-                ModelInfo = new XivModelInfo { ModelID = 0, Variant = 1, Body = 0 }
+                PrimaryCategory = XivStrings.Gear,
+                SecondaryCategory = _slotNameDictionary[7],
+                ModelInfo = new XivModelInfo { PrimaryID = 0, ImcSubsetID = 1, SecondaryID = 0 }
             };
 
             xivGearList.Add(xivGear);
@@ -246,9 +261,9 @@ namespace xivModdingFramework.Items.Categories
             xivGear = new XivGear
             {
                 Name = "SmallClothes Feet",
-                Category = XivStrings.Gear,
-                ItemCategory = _slotNameDictionary[8],
-                ModelInfo = new XivModelInfo { ModelID = 0, Variant = 1, Body = 0 }
+                PrimaryCategory = XivStrings.Gear,
+                SecondaryCategory = _slotNameDictionary[8],
+                ModelInfo = new XivModelInfo { PrimaryID = 0, ImcSubsetID = 1, SecondaryID = 0 }
             };
 
             xivGearList.Add(xivGear);
@@ -256,9 +271,9 @@ namespace xivModdingFramework.Items.Categories
             xivGear = new XivGear
             {
                 Name = "SmallClothes Body (NPC)",
-                Category = XivStrings.Gear,
-                ItemCategory = _slotNameDictionary[4],
-                ModelInfo = new XivModelInfo { ModelID = 9903, Variant = 1, Body = 0 }
+                PrimaryCategory = XivStrings.Gear,
+                SecondaryCategory = _slotNameDictionary[4],
+                ModelInfo = new XivModelInfo { PrimaryID = 9903, ImcSubsetID = 1, SecondaryID = 0 }
             };
 
             xivGearList.Add(xivGear);
@@ -266,9 +281,9 @@ namespace xivModdingFramework.Items.Categories
             xivGear = new XivGear
             {
                 Name = "SmallClothes Hands (NPC)",
-                Category = XivStrings.Gear,
-                ItemCategory = _slotNameDictionary[5],
-                ModelInfo = new XivModelInfo { ModelID = 9903, Variant = 1, Body = 0 }
+                PrimaryCategory = XivStrings.Gear,
+                SecondaryCategory = _slotNameDictionary[5],
+                ModelInfo = new XivModelInfo { PrimaryID = 9903, ImcSubsetID = 1, SecondaryID = 0 }
             };
 
             xivGearList.Add(xivGear);
@@ -276,9 +291,9 @@ namespace xivModdingFramework.Items.Categories
             xivGear = new XivGear
             {
                 Name = "SmallClothes Legs (NPC)",
-                Category = XivStrings.Gear,
-                ItemCategory = _slotNameDictionary[7],
-                ModelInfo = new XivModelInfo { ModelID = 9903, Variant = 1, Body = 0 }
+                PrimaryCategory = XivStrings.Gear,
+                SecondaryCategory = _slotNameDictionary[7],
+                ModelInfo = new XivModelInfo { PrimaryID = 9903, ImcSubsetID = 1, SecondaryID = 0 }
             };
 
             xivGearList.Add(xivGear);
@@ -286,9 +301,9 @@ namespace xivModdingFramework.Items.Categories
             xivGear = new XivGear
             {
                 Name = "SmallClothes Feet (NPC)",
-                Category = XivStrings.Gear,
-                ItemCategory = _slotNameDictionary[8],
-                ModelInfo = new XivModelInfo { ModelID = 9903, Variant = 1, Body = 0 }
+                PrimaryCategory = XivStrings.Gear,
+                SecondaryCategory = _slotNameDictionary[8],
+                ModelInfo = new XivModelInfo { PrimaryID = 9903, ImcSubsetID = 1, SecondaryID = 0 }
             };
 
             xivGearList.Add(xivGear);
@@ -296,9 +311,9 @@ namespace xivModdingFramework.Items.Categories
             xivGear = new XivGear
             {
                 Name = "SmallClothes Feet 2 (NPC)",
-                Category = XivStrings.Gear,
-                ItemCategory = _slotNameDictionary[8],
-                ModelInfo = new XivModelInfo { ModelID = 9901, Variant = 1, Body = 0 }
+                PrimaryCategory = XivStrings.Gear,
+                SecondaryCategory = _slotNameDictionary[8],
+                ModelInfo = new XivModelInfo { PrimaryID = 9901, ImcSubsetID = 1, SecondaryID = 0 }
             };
 
             xivGearList.Add(xivGear);
@@ -320,13 +335,13 @@ namespace xivModdingFramework.Items.Categories
         {
             // Get the material version for the item from the imc file
             var imc = new Imc(_gameDirectory, dataFile);
-            var gearVersion = (await imc.GetImcInfo(xivGear, xivGear.ModelInfo)).Version.ToString().PadLeft(4, '0');
+            var gearVersion = (await imc.GetImcInfo(xivGear)).Variant.ToString().PadLeft(4, '0');
 
-            var modelID = xivGear.ModelInfo.ModelID.ToString().PadLeft(4, '0');
+            var modelID = xivGear.ModelInfo.PrimaryID.ToString().PadLeft(4, '0');
 
             var raceList = new List<XivRace>();
 
-            var itemType = ItemType.GetItemType(xivGear);
+            var itemType = ItemType.GetPrimaryItemType(xivGear);
             string mtrlFolder;
 
             if (itemType == XivItemType.weapon)
@@ -357,10 +372,10 @@ namespace xivModdingFramework.Items.Categories
                 switch (itemType)
                 {
                     case XivItemType.equipment:
-                        mtrlFile = $"mt_c{ID}e{modelID}_{SlotAbbreviationDictionary[xivGear.ItemCategory]}_a.mtrl";
+                        mtrlFile = $"mt_c{ID}e{modelID}_{SlotAbbreviationDictionary[xivGear.SecondaryCategory]}_a.mtrl";
                         break;
                     case XivItemType.accessory:
-                        mtrlFile = $"mt_c{ID}a{modelID}_{SlotAbbreviationDictionary[xivGear.ItemCategory]}_a.mtrl";
+                        mtrlFile = $"mt_c{ID}a{modelID}_{SlotAbbreviationDictionary[xivGear.SecondaryCategory]}_a.mtrl";
                         break;
                     default:
                         mtrlFile = "";
@@ -399,9 +414,9 @@ namespace xivModdingFramework.Items.Categories
         /// <returns>A list of XivRace data</returns>
         public async Task<List<XivRace>> GetRacesForModels(XivGear xivGear, XivDataFile dataFile)
         {
-            var itemType = ItemType.GetItemType(xivGear);
+            var itemType = xivGear.GetPrimaryItemType();
 
-            var modelID = xivGear.ModelInfo.ModelID.ToString().PadLeft(4, '0');
+            var modelID = xivGear.ModelInfo.PrimaryID.ToString().PadLeft(4, '0');
 
             var raceList = new List<XivRace>();
 
@@ -411,7 +426,7 @@ namespace xivModdingFramework.Items.Categories
             }
 
             string mdlFolder;
-            var id = xivGear.ModelInfo.ModelID.ToString().PadLeft(4, '0');
+            var id = xivGear.ModelInfo.PrimaryID.ToString().PadLeft(4, '0');
 
             switch (itemType)
             {
@@ -436,10 +451,10 @@ namespace xivModdingFramework.Items.Categories
                 switch (itemType)
                 {
                     case XivItemType.equipment:
-                        mdlFile = $"c{ID}e{modelID}_{SlotAbbreviationDictionary[xivGear.ItemCategory]}.mdl";
+                        mdlFile = $"c{ID}e{modelID}_{SlotAbbreviationDictionary[xivGear.SecondaryCategory]}.mdl";
                         break;
                     case XivItemType.accessory:
-                        mdlFile = $"c{ID}a{modelID}_{SlotAbbreviationDictionary[xivGear.ItemCategory]}.mdl";
+                        mdlFile = $"c{ID}a{modelID}_{SlotAbbreviationDictionary[xivGear.SecondaryCategory]}.mdl";
                         break;
                     default:
                         mdlFile = "";
@@ -657,6 +672,56 @@ namespace xivModdingFramework.Items.Categories
 
             return ttpList;
         }
+        public async Task<List<IItemModel>> GetSameVariantList(IItemModel item)
+        {
+            var sameModelItems = new List<IItemModel>();
+            if (!item.PrimaryCategory.Equals(XivStrings.Gear))
+
+            {
+                sameModelItems.Add((IItemModel)item.Clone());
+                return sameModelItems;
+            }
+            sameModelItems = await GetSameModelList(item);
+
+            var imc = new Imc(_gameDirectory, XivDataFile._04_Chara);
+            var originalInfo = await imc.GetImcInfo(item);
+
+            var sameMaterialItems = new List<IItemModel>();
+            foreach (var i in sameModelItems)
+            {
+                var info = await imc.GetImcInfo(i);
+                if (info.Variant == originalInfo.Variant)
+                {
+                    sameMaterialItems.Add(i);
+                }
+            }
+
+            return sameMaterialItems;
+        }
+
+        public async Task<List<IItemModel>> GetSameModelList(IItemModel item)
+        {
+            var sameModelItems = new List<IItemModel>();
+
+            //gear
+            if (item.PrimaryCategory.Equals(XivStrings.Gear))
+            {
+                sameModelItems.AddRange(
+                    (await GetGearList())
+                    .Where(it =>
+                    it.ModelInfo.PrimaryID == item.ModelInfo.PrimaryID
+                    && it.ModelInfo.SecondaryID == item.ModelInfo.SecondaryID
+                    && it.SecondaryCategory == item.SecondaryCategory).Select(it => it as IItemModel).ToList()
+                );
+            }
+            else
+            {
+                //character
+                sameModelItems.Add((IItemModel)item.Clone());
+            }
+            return sameModelItems;
+        }
+
 
         // A dictionary containg <Slot ID, Gear Category>
         private readonly Dictionary<int, string> _slotNameDictionary = new Dictionary<int, string>

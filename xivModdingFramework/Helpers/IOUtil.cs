@@ -14,8 +14,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using xivModdingFramework.General.Enums;
 using xivModdingFramework.Items.Interfaces;
@@ -89,15 +94,15 @@ namespace xivModdingFramework.Helpers
                 validItemName = string.Join("：", item.Name.Split(Path.GetInvalidFileNameChars()));
             }
 
-            if (item.Category.Equals("UI"))
+            if (item.PrimaryCategory.Equals("UI"))
             {
-                if (item.ItemSubCategory != null && !item.ItemCategory.Equals(string.Empty))
+                if (item.TertiaryCategory != null && !item.SecondaryCategory.Equals(string.Empty))
                 {
-                    path = $"{saveDirectory.FullName}/{item.Category}/{item.ItemCategory}/{item.ItemSubCategory}/{validItemName}";
+                    path = $"{saveDirectory.FullName}/{item.PrimaryCategory}/{item.SecondaryCategory}/{item.TertiaryCategory}/{validItemName}";
                 }
                 else
                 {
-                    path = $"{saveDirectory.FullName}/{item.Category}/{item.ItemCategory}/{validItemName}";
+                    path = $"{saveDirectory.FullName}/{item.PrimaryCategory}/{item.SecondaryCategory}/{validItemName}";
                 }
 
                 if (path.Contains("???"))
@@ -105,55 +110,62 @@ namespace xivModdingFramework.Helpers
                     path = path.Replace("???", "Unk");
                 }
             }
-            else if (item.Category.Equals(XivStrings.Character))
+            else if (item.PrimaryCategory.Equals(XivStrings.Character))
             {
                 if (item.Name.Equals(XivStrings.Equipment_Decals) || item.Name.Equals(XivStrings.Face_Paint))
                 {
-                    path = $"{saveDirectory.FullName}/{item.Category}/{validItemName}";
+                    path = $"{saveDirectory.FullName}/{item.PrimaryCategory}/{validItemName}";
                 }
                 else
                 {
-                    path = $"{saveDirectory.FullName}/{item.Category}/{validItemName}/{race}/{((IItemModel)item).ModelInfo.Body}";
+                    path = $"{saveDirectory.FullName}/{item.PrimaryCategory}/{validItemName}/{race}/{((IItemModel)item).ModelInfo.SecondaryID}";
                 }
             }
             else
             {
-                path = $"{saveDirectory.FullName}/{item.ItemCategory}/{validItemName}";
+                path = $"{saveDirectory.FullName}/{item.SecondaryCategory}/{validItemName}";
             }
             
             return path;
         }
-
+    
         /// <summary>
-        /// Determines whether a DDS file exists for the given item
+        /// Replaces the bytes in a given byte array with the bytes from another array, starting at the given index of the original array.
         /// </summary>
-        /// <param name="item">The item to check</param>
-        /// <param name="saveDirectory">The save directory where the DDS should be located</param>
-        /// <param name="fileName">The name of the file</param>
-        /// <returns>True if the DDS file exists, false otherwise</returns>
-        public static bool DDSFileExists(IItem item, DirectoryInfo saveDirectory, string fileName, XivRace race = XivRace.All_Races)
+        /// <param name="original"></param>
+        /// <param name="toInject"></param>
+        /// <param name="index"></param>
+        public static void ReplaceBytesAt(List<byte> original, byte[] toInject, int index)
         {
-            var path = MakeItemSavePath(item, saveDirectory, race);
-
-            var fullPath = new DirectoryInfo($"{path}\\{fileName}.dds");
-
-            return File.Exists(fullPath.FullName);
+            for(var i = 0; i < toInject.Length; i++)
+            {
+                original[index + i] = toInject[i];
+            };
         }
 
+
+
         /// <summary>
-        /// Determines whether a BMP file exists for the given item
+        /// Resolves what XivDataFile a file lives in based upon its internal FFXIV directory path.
         /// </summary>
-        /// <param name="item">The item to check</param>
-        /// <param name="saveDirectory">The save directory where the BMP should be located</param>
-        /// <param name="fileName">The name of the file</param>
-        /// <returns>True if the BMP file exists, false otherwise</returns>
-        public static bool BMPFileExists(IItem item, DirectoryInfo saveDirectory, string fileName, XivRace race = XivRace.All_Races)
+        /// <param name="path"></param>
+        /// <returns></returns>
+        public static XivDataFile GetDataFileFromPath(string path)
         {
-            var path = MakeItemSavePath(item, saveDirectory, race);
+            var files = Enum.GetValues(typeof(XivDataFile));
+            foreach (var f in files)
+            {
+                var file = (XivDataFile)f;
+                var prefix = file.GetFolderKey();
 
-            var fullPath = new DirectoryInfo($"{path}\\{fileName}.bmp");
+                var match = Regex.Match(path, "^" + prefix);
+                if (match.Success)
+                {
+                    return file;
+                }
+            }
 
-            return File.Exists(fullPath.FullName);
+            throw new Exception("Could not resolve data file - Invalid internal FFXIV path.");
         }
     }
 }

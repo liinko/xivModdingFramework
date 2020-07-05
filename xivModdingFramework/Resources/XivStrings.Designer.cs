@@ -1411,6 +1411,15 @@ namespace xivModdingFramework.Resources {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Left Ring.
+        /// </summary>
+        internal static string LeftRing {
+            get {
+                return ResourceManager.GetString("LeftRing", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Legs.
         /// </summary>
         internal static string Legs {
@@ -1843,6 +1852,15 @@ namespace xivModdingFramework.Resources {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Ornaments.
+        /// </summary>
+        internal static string Ornaments {
+            get {
+                return ResourceManager.GetString("Ornaments", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Other.
         /// </summary>
         internal static string Other {
@@ -2127,6 +2145,15 @@ namespace xivModdingFramework.Resources {
         internal static string Two_Handed {
             get {
                 return ResourceManager.GetString("Two_Handed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to UI.
+        /// </summary>
+        internal static string UI {
+            get {
+                return ResourceManager.GetString("UI", resourceCulture);
             }
         }
         

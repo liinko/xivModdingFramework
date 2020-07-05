@@ -18,6 +18,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
+using xivModdingFramework.Cache;
 using xivModdingFramework.Exd.Enums;
 using xivModdingFramework.Exd.FileTypes;
 using xivModdingFramework.General.Enums;
@@ -44,6 +45,13 @@ namespace xivModdingFramework.Items.Categories
             _ex = new Ex(_gameDirectory, _xivLanguage);
         }
 
+
+        public async Task<List<XivUi>> GetUIList()
+        {
+            var cache = new XivCache(_gameDirectory, _xivLanguage);
+            return await cache.GetCachedUiList();
+        }
+
         /// <summary>
         /// Gets a list of UI elements from the Uld Files
         /// </summary>
@@ -65,8 +73,8 @@ namespace xivModdingFramework.Items.Categories
                 var xivUi = new XivUi
                 {
                     Name = Path.GetFileNameWithoutExtension(uldPath),
-                    Category = "UI",
-                    ItemCategory = "HUD",
+                    PrimaryCategory = "UI",
+                    SecondaryCategory = "HUD",
                     UiPath = "ui/uld"
                 };
 
@@ -115,8 +123,8 @@ namespace xivModdingFramework.Items.Categories
 
                 var xivUi = new XivUi()
                 {
-                    Category = "UI",
-                    ItemCategory = XivStrings.Maps
+                    PrimaryCategory = "UI",
+                    SecondaryCategory = XivStrings.Maps
                 };
 
                 // Big Endian Byte Order 
@@ -147,7 +155,7 @@ namespace xivModdingFramework.Items.Categories
                 if (mapName.Equals(string.Empty)) return;
 
                 xivUi.Name = mapName;
-                xivUi.ItemSubCategory = regionName;
+                xivUi.TertiaryCategory = regionName;
 
                 if (mapNameList.Contains(mapName))
                 {
@@ -190,8 +198,8 @@ namespace xivModdingFramework.Items.Categories
             {
                 var xivUi = new XivUi()
                 {
-                    Category = "UI",
-                    ItemCategory = XivStrings.Actions
+                    PrimaryCategory = "UI",
+                    SecondaryCategory = XivStrings.Actions
                 };
 
                 int actionCategory;
@@ -204,11 +212,14 @@ namespace xivModdingFramework.Items.Categories
 
                     if (iconNumber == 0) return;
 
-                    br.BaseStream.Seek(28, SeekOrigin.Begin);
+                    var dataOffset = 28;
+                    var dataLength = 60;
+
+                    br.BaseStream.Seek(dataOffset, SeekOrigin.Begin);
                     actionCategory = br.ReadByte();
 
-                    br.BaseStream.Seek(60, SeekOrigin.Begin);
-                    var nameLength = action.Length - 60;
+                    br.BaseStream.Seek(dataLength, SeekOrigin.Begin);
+                    var nameLength = action.Length - dataLength;
                     var name = Encoding.UTF8.GetString(br.ReadBytes(nameLength)).Replace("\0", "");
 
                     xivUi.Name = name;
@@ -230,11 +241,11 @@ namespace xivModdingFramework.Items.Categories
 
                     if (name.Equals(string.Empty))
                     {
-                        xivUi.ItemSubCategory = XivStrings.None;
+                        xivUi.TertiaryCategory = XivStrings.None;
                     }
                     else
                     {
-                        xivUi.ItemSubCategory = name;
+                        xivUi.TertiaryCategory = name;
                     }
                 }
 
@@ -252,9 +263,9 @@ namespace xivModdingFramework.Items.Categories
             {
                 var xivUi = new XivUi()
                 {
-                    Category = "UI",
-                    ItemCategory = XivStrings.Actions,
-                    ItemSubCategory = XivStrings.General
+                    PrimaryCategory = "UI",
+                    SecondaryCategory = XivStrings.Actions,
+                    TertiaryCategory = XivStrings.General
                 };
 
                 // Big Endian Byte Order 
@@ -292,9 +303,9 @@ namespace xivModdingFramework.Items.Categories
             {
                 var xivUi = new XivUi()
                 {
-                    Category = "UI",
-                    ItemCategory = XivStrings.Actions,
-                    ItemSubCategory = XivStrings.Buddy
+                    PrimaryCategory = "UI",
+                    SecondaryCategory = XivStrings.Actions,
+                    TertiaryCategory = XivStrings.Buddy
                 };
 
                 // Big Endian Byte Order 
@@ -334,9 +345,9 @@ namespace xivModdingFramework.Items.Categories
             {
                 var xivUi = new XivUi()
                 {
-                    Category = "UI",
-                    ItemCategory = XivStrings.Actions,
-                    ItemSubCategory = XivStrings.Company
+                    PrimaryCategory = "UI",
+                    SecondaryCategory = XivStrings.Actions,
+                    TertiaryCategory = XivStrings.Company
                 };
 
                 // Big Endian Byte Order 
@@ -376,9 +387,9 @@ namespace xivModdingFramework.Items.Categories
             {
                 var xivUi = new XivUi()
                 {
-                    Category = "UI",
-                    ItemCategory = XivStrings.Actions,
-                    ItemSubCategory = XivStrings.Craft
+                    PrimaryCategory = "UI",
+                    SecondaryCategory = XivStrings.Actions,
+                    TertiaryCategory = XivStrings.Craft
                 };
 
                 // Big Endian Byte Order 
@@ -418,9 +429,9 @@ namespace xivModdingFramework.Items.Categories
             {
                 var xivUi = new XivUi()
                 {
-                    Category = "UI",
-                    ItemCategory = XivStrings.Actions,
-                    ItemSubCategory = XivStrings.Event
+                    PrimaryCategory = "UI",
+                    SecondaryCategory = XivStrings.Actions,
+                    TertiaryCategory = XivStrings.Event
                 };
 
                 // Big Endian Byte Order 
@@ -458,9 +469,9 @@ namespace xivModdingFramework.Items.Categories
             {
                 var xivUi = new XivUi()
                 {
-                    Category = "UI",
-                    ItemCategory = XivStrings.Actions,
-                    ItemSubCategory = XivStrings.Emote
+                    PrimaryCategory = "UI",
+                    SecondaryCategory = XivStrings.Actions,
+                    TertiaryCategory = XivStrings.Emote
                 };
 
                 // Big Endian Byte Order 
@@ -499,9 +510,9 @@ namespace xivModdingFramework.Items.Categories
             {
                 var xivUi = new XivUi()
                 {
-                    Category = "UI",
-                    ItemCategory = XivStrings.Actions,
-                    ItemSubCategory = XivStrings.Marker
+                    PrimaryCategory = "UI",
+                    SecondaryCategory = XivStrings.Actions,
+                    TertiaryCategory = XivStrings.Marker
                 };
 
                 // Big Endian Byte Order 
@@ -537,9 +548,9 @@ namespace xivModdingFramework.Items.Categories
             {
                 var xivUi = new XivUi()
                 {
-                    Category = "UI",
-                    ItemCategory = XivStrings.Actions,
-                    ItemSubCategory = XivStrings.FieldMarker
+                    PrimaryCategory = "UI",
+                    SecondaryCategory = XivStrings.Actions,
+                    TertiaryCategory = XivStrings.FieldMarker
                 };
 
                 // Big Endian Byte Order 
@@ -602,8 +613,8 @@ namespace xivModdingFramework.Items.Categories
             {
                 var xivUi = new XivUi()
                 {
-                    Category = "UI",
-                    ItemCategory = XivStrings.Status
+                    PrimaryCategory = "UI",
+                    SecondaryCategory = XivStrings.Status
                 };
 
                 // Big Endian Byte Order 
@@ -633,15 +644,15 @@ namespace xivModdingFramework.Items.Categories
                     //Status effects have a byte that determines whether the effect is detrimental or beneficial
                     if (type == 1)
                     {
-                        xivUi.ItemSubCategory = XivStrings.Beneficial;
+                        xivUi.TertiaryCategory = XivStrings.Beneficial;
                     }
                     else if (type == 2)
                     {
-                        xivUi.ItemSubCategory = XivStrings.Detrimental;
+                        xivUi.TertiaryCategory = XivStrings.Detrimental;
                     }
                     else
                     {
-                        xivUi.ItemSubCategory = XivStrings.None;
+                        xivUi.TertiaryCategory = XivStrings.None;
                         xivUi.Name = xivUi.Name + " " + type;
                     }
                 }
@@ -677,8 +688,8 @@ namespace xivModdingFramework.Items.Categories
             {
                 var xivUi = new XivUi()
                 {
-                    Category = "UI",
-                    ItemCategory = XivStrings.MapSymbol
+                    PrimaryCategory = "UI",
+                    SecondaryCategory = XivStrings.MapSymbol
                 };
 
                 int placeNameIndex;
@@ -730,8 +741,8 @@ namespace xivModdingFramework.Items.Categories
             {
                 var xivUi = new XivUi()
                 {
-                    Category = "UI",
-                    ItemCategory = XivStrings.OnlineStatus
+                    PrimaryCategory = "UI",
+                    SecondaryCategory = XivStrings.OnlineStatus
                 };
 
                 // Big Endian Byte Order 
@@ -778,7 +789,7 @@ namespace xivModdingFramework.Items.Categories
             // These are the offsets to relevant data
             // These will need to be changed if data gets added or removed with a patch
             const int nameLengthOffset = 6;
-            const int iconNumberOffest = 26;
+            const int iconNumberOffset = 26;
 
             var weatherExData = await _ex.ReadExData(XivEx.weather);
 
@@ -788,8 +799,8 @@ namespace xivModdingFramework.Items.Categories
             {
                 var xivUi = new XivUi()
                 {
-                    Category = "UI",
-                    ItemCategory = XivStrings.Weather
+                    PrimaryCategory = "UI",
+                    SecondaryCategory = XivStrings.Weather
                 };
 
                 // Big Endian Byte Order 
@@ -799,7 +810,7 @@ namespace xivModdingFramework.Items.Categories
 
                     var nameLength = br.ReadInt16();
 
-                    br.BaseStream.Seek(iconNumberOffest, SeekOrigin.Begin);
+                    br.BaseStream.Seek(iconNumberOffset, SeekOrigin.Begin);
 
                     var iconNumber = br.ReadUInt16();
 
@@ -844,8 +855,8 @@ namespace xivModdingFramework.Items.Categories
             {
                 var xivUi = new XivUi()
                 {
-                    Category = "UI",
-                    ItemCategory = XivStrings.LoadingScreen,
+                    PrimaryCategory = "UI",
+                    SecondaryCategory = XivStrings.LoadingScreen,
                     UiPath = "ui/loadingimage"
                 };
 

@@ -24,6 +24,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Xml;
+using xivModdingFramework.Exd.FileTypes;
 using xivModdingFramework.General.Enums;
 using xivModdingFramework.Helpers;
 using xivModdingFramework.Items.Interfaces;
@@ -44,6 +45,13 @@ namespace xivModdingFramework.Models.FileTypes
         private readonly DirectoryInfo _gameDirectory;
         private readonly XivDataFile _dataFile;
         private readonly string _pluginTarget, _appVersion;
+
+        private enum ToolType
+		{
+            TexTools,
+            OpenCOLLADA,
+            Blender,
+		}
 
         public Dae(DirectoryInfo gameDirectory, XivDataFile dataFile, string pluginTarget, string appVersion = "1.0.0")
         {
@@ -98,7 +106,7 @@ namespace xivModdingFramework.Models.FileTypes
                 // This would be the same name given to the skeleton file
                 var skelName = modelName.Substring(0, 5);
 
-                if (item.ItemCategory.Equals(XivStrings.Head) || item.ItemCategory.Equals(XivStrings.Hair) || item.ItemCategory.Equals(XivStrings.Face))
+                if (item.SecondaryCategory.Equals(XivStrings.Head) || item.SecondaryCategory.Equals(XivStrings.Hair) || item.SecondaryCategory.Equals(XivStrings.Face))
                 {
                     skelName = modelName.Substring(5, 5);
                 }
@@ -111,7 +119,7 @@ namespace xivModdingFramework.Models.FileTypes
                         var sklb = new Sklb(_gameDirectory, _dataFile);
                         await sklb.CreateSkelFromSklb(item, xivModel);
 
-                        if (item.ItemCategory.Equals(XivStrings.Head) || item.ItemCategory.Equals(XivStrings.Hair) || item.ItemCategory.Equals(XivStrings.Face))
+                        if (item.SecondaryCategory.Equals(XivStrings.Head) || item.SecondaryCategory.Equals(XivStrings.Hair) || item.SecondaryCategory.Equals(XivStrings.Face))
                         {
                             skelName = modelName.Substring(0, 5);
                         }
@@ -137,6 +145,7 @@ namespace xivModdingFramework.Models.FileTypes
                 // Deserializes the json skeleton file and makes 2 dictionaries with names and numbers as keys
                 foreach (var b in skeletonData)
                 {
+                    if (b == "") continue;
                     var j = JsonConvert.DeserializeObject<SkeletonData>(b);
 
                     FullSkel.Add(j.BoneName, j);
@@ -400,12 +409,11 @@ namespace xivModdingFramework.Models.FileTypes
             var norm   = "-normals-array";
             var biNorm = "-texbinormals";
             var tang   = "-textangents";
-            var blender = false;
 
             var indexStride = 4;
             var textureCoordinateStride = 2;
             var vertexColorStride = 3;
-            var toolType = "TexTools";
+            ToolType toolType = ToolType.TexTools;
 
             using (var reader = XmlReader.Create(daeLocation.FullName))
             {
@@ -430,32 +438,25 @@ namespace xivModdingFramework.Models.FileTypes
                                 tang   = "-map1-textangents";
                                 textureCoordinateStride = 3;
                                 indexStride = 6;
-                                toolType = "OpenCOLLADA";
+                                toolType = ToolType.OpenCOLLADA;
                             }
-                            else if (tool.Contains("FBX"))
+                            else if (tool.Contains("Blender"))
                             {
-                                pos    = "-position-array";
-                                norm   = "-normal0-array";
-                                vcol   = "_color0-array";
-                                texc   = "-uv0-array";
-                                texc2  = "-uv1-array";
-                                valpha = "-uv2-array";
-                                indexStride = 6;
-                                vertexColorStride = 4;
-                                toolType = "FBXCOLLADA";
-                            }
-                            else if (tool.Contains("Exporter for Blender"))
-                            {
-                                biNorm = "-bitangents-array";
-                                tang   = "-tangents-array";
-                                texc   = "-texcoord-0-array";
-                                texc2  = "-texcoord-1-array";
+                                texc    = "-map-0-array";
+                                texc2   = "-map-1-array";
+                                valpha  = "-map-2-array";
+                                vcol    = "-col-0-array";
+                                pos     = "-mesh-positions-array";
+                                norm    = "-mesh-normals-array";
+                                biNorm  = "-mesh-bitangents-array";
+                                tang    = "-mesh-tangents-array";
                                 indexStride = 1;
-                                blender = true;
+                                toolType = ToolType.Blender;
                             }
                             else if (!tool.Contains("TexTools"))
                             {
-                                throw new FormatException($"The Authoring Tool being used is unsupported.  Tool:{tool}");
+                                throw new FormatException($"The Authoring Tool being used is unsupported.  Tool:{tool}\n" +
+                                    $"TexTools requires the use of 3ds Max OpenCOLLADA or Blender.");
                             }
                         }
 
@@ -477,14 +478,24 @@ namespace xivModdingFramework.Models.FileTypes
 
                             meshNameDict.Add(id, atr);
 
-                            var meshNum = int.Parse(atr.Substring(atr.LastIndexOf("_", StringComparison.Ordinal) + 1, 1));
+                            var meshNum = 0;
 
-                            // Determines whether the mesh has parts and gets the mesh number
-                            if (atr.Contains("."))
+                            try
                             {
-                                meshNum = int.Parse(atr.Substring(atr.LastIndexOf("_", StringComparison.Ordinal) + 1,
-                                    atr.LastIndexOf(".", StringComparison.Ordinal) -
-                                    (atr.LastIndexOf("_", StringComparison.Ordinal) + 1)));
+                                meshNum = int.Parse(atr.Substring(atr.LastIndexOf("_", StringComparison.Ordinal) + 1, 1));
+
+                                // Determines whether the mesh has parts and gets the mesh number
+                                if (atr.Contains("."))
+                                {
+                                    meshNum = int.Parse(atr.Substring(atr.LastIndexOf("_", StringComparison.Ordinal) + 1,
+                                        atr.LastIndexOf(".", StringComparison.Ordinal) -
+                                        (atr.LastIndexOf("_", StringComparison.Ordinal) + 1)));
+                                }
+                            }
+                            catch
+                            {
+                                throw new Exception($"Could not read mesh number of mesh: {atr}\n\n" +
+                                                    $"Please make sure your mesh name ends with the mesh/part number.");
                             }
 
                             while (reader.Read())
@@ -493,43 +504,44 @@ namespace xivModdingFramework.Models.FileTypes
                                 {
                                     if (reader.Name.Contains("float_array"))
                                     {
+                                        var currentId = reader["id"].ToLower();
                                         // Positions 
-                                        if (reader["id"].ToLower().Contains(pos))
+                                        if (currentId.EndsWith(pos))
                                         {
                                             cData.Positions.AddRange((float[])reader.ReadElementContentAs(typeof(float[]), null));
                                         }
                                         // Normals
-                                        else if (reader["id"].ToLower().Contains(norm) && cData.Positions.Count > 0)
+                                        else if (currentId.EndsWith(norm) && cData.Positions.Count > 0)
                                         {
                                             cData.Normals.AddRange((float[])reader.ReadElementContentAs(typeof(float[]), null));
                                         }
                                         // Vertex Colors                                        
-                                        else if(reader["id"].ToLower().Contains(vcol) && cData.Positions.Count > 0)
+                                        else if(currentId.EndsWith(vcol) && cData.Positions.Count > 0)
                                         {
                                             cData.VertexColors.AddRange((float[])reader.ReadElementContentAs(typeof(float[]), null));
                                         }
                                         //Texture Coordinates
-                                        else if (reader["id"].ToLower().Contains(texc) && cData.Positions.Count > 0)
+                                        else if (currentId.EndsWith(texc) && cData.Positions.Count > 0)
                                         {
                                             cData.TextureCoordinates0.AddRange((float[])reader.ReadElementContentAs(typeof(float[]), null));
                                         }
                                         //Texture Coordinates2
-                                        else if (reader["id"].ToLower().Contains(texc2) && cData.Positions.Count > 0)
+                                        else if (currentId.EndsWith(texc2) && cData.Positions.Count > 0)
                                         {
                                             cData.TextureCoordinates1.AddRange((float[])reader.ReadElementContentAs(typeof(float[]), null));
                                         }
                                         // Vertex Alphas
-                                        else if (reader["id"].ToLower().Contains(valpha) && cData.Positions.Count > 0)
+                                        else if (currentId.EndsWith(valpha) && cData.Positions.Count > 0)
                                         {
                                             cData.VertexAlphas.AddRange((float[])reader.ReadElementContentAs(typeof(float[]), null));
                                         }
                                         //Tangents
-                                        else if (reader["id"].ToLower().Contains(tang) && cData.Positions.Count > 0)
+                                        else if (currentId.EndsWith(tang) && cData.Positions.Count > 0)
                                         {
                                             cData.Tangents.AddRange((float[])reader.ReadElementContentAs(typeof(float[]), null));
                                         }
                                         //BiNormals
-                                        else if (reader["id"].ToLower().Contains(biNorm) && cData.Positions.Count > 0)
+                                        else if (currentId.EndsWith(biNorm) && cData.Positions.Count > 0)
                                         {
                                             cData.BiNormals.AddRange((float[])reader.ReadElementContentAs(typeof(float[]), null));
                                         }
@@ -546,71 +558,90 @@ namespace xivModdingFramework.Models.FileTypes
                                             {
                                                 if (reader.Name.Contains("input"))
                                                 {
-                                                    var semantic = reader["semantic"];
-                                                    var source = reader["source"];
+                                                    string semantic = reader["semantic"].ToLower();
+                                                    string source = reader["source"].ToLower();
+
                                                     inputOffset = int.Parse(reader["offset"]);
 
-                                                    if (semantic.ToLower().Equals("vertex"))
+                                                    if (semantic.Equals("vertex"))
                                                     {
                                                         vertexIndexDict.Add("position", inputOffset);
                                                     }
-                                                    else if (semantic.ToLower().Equals("normal"))
+                                                    else if (semantic.Equals("normal"))
                                                     {
                                                         vertexIndexDict.Add("normal", inputOffset);
                                                     }
-                                                    else if (semantic.ToLower().Equals("color"))
-                                                    {
-                                                        vertexIndexDict.Add("vertexColor", inputOffset);
-                                                    }
-                                                    else if (semantic.ToLower().Equals("textangent") &&
-                                                             (source.ToLower().Contains("map0") || source.ToLower().Contains("map1")))
+                               
+                                                    else if (semantic.Equals("textangent") && (source.Contains("map0") || source.Contains("map1")))
                                                     {
                                                         vertexIndexDict.Add("tangent", inputOffset);
                                                     }
-                                                    else if (semantic.ToLower().Equals("texbinormal") &&
-                                                             (source.ToLower().Contains("map0") ||source.ToLower().Contains("map1")))
+                                                    else if (semantic.Equals("texbinormal") && (source.Contains("map0") ||source.Contains("map1")))
                                                     {
                                                         vertexIndexDict.Add("biNormal", inputOffset);
                                                     }
 
-                                                    if (!toolType.Equals("TexTools"))
+
+                                                    if (toolType == ToolType.TexTools)
                                                     {
-                                                        if (semantic.ToLower().Equals("texcoord") &&
-                                                                 (source.ToLower().Contains("map1") ||
-                                                                  source.ToLower().Contains("uv0")))
+                                                        if (semantic.Equals("texcoord") && source.Contains("map0"))
                                                         {
                                                             vertexIndexDict.Add("textureCoordinate", inputOffset);
                                                         }
-                                                        else if (semantic.ToLower().Equals("texcoord") &&
-                                                                 (source.ToLower().Contains("map2") ||
-                                                                  source.ToLower().Contains("uv1")))
+                                                        else if (semantic.Equals("texcoord") && source.Contains("map1"))
                                                         {
                                                             vertexIndexDict.Add("textureCoordinate1", inputOffset);
                                                         }
-                                                        else if (semantic.ToLower().Equals("texcoord") &&
-                                                                 (source.ToLower().Contains("map3") ||
-                                                                  source.ToLower().Contains("uv3")))
+                                                        else if (semantic.Equals("texcoord") && source.Contains("map2"))
                                                         {
                                                             vertexIndexDict.Add("vertexAlpha", inputOffset);
+                                                        }
+                                                        else if (semantic.Equals("color"))
+                                                        {
+                                                            vertexIndexDict.Add("vertexColor", inputOffset);
+                                                        }
+                                                    }
+                                                    else if (toolType == ToolType.Blender)
+													{
+                                                        if (semantic.Equals("texcoord") && source.Contains("map-0"))
+                                                        {
+                                                            vertexIndexDict.Add("textureCoordinate", inputOffset);
+                                                        }
+                                                        else if (semantic.Equals("texcoord") && source.Contains("map-1"))
+                                                        {
+                                                            vertexIndexDict.Add("textureCoordinate1", inputOffset);
+                                                        }
+                                                        else if (semantic.Equals("texcoord") && source.Contains("map-2"))
+                                                        {
+                                                            vertexIndexDict.Add("vertexAlpha", inputOffset);
+                                                        }
+                                                        else if (semantic.Equals("color") && !vertexIndexDict.ContainsKey("vertexColor"))
+                                                        {
+                                                            vertexIndexDict.Add("vertexColor", inputOffset);
+                                                        }
+                                                    }
+                                                    else if (toolType == ToolType.OpenCOLLADA)
+													{
+                                                        if (semantic.Equals("texcoord") && (source.Contains("map1") || source.Contains("uv0")))
+                                                        {
+                                                            vertexIndexDict.Add("textureCoordinate", inputOffset);
+                                                        }
+                                                        else if (semantic.Equals("texcoord") && (source.Contains("map2") || source.Contains("uv1")))
+                                                        {
+                                                            vertexIndexDict.Add("textureCoordinate1", inputOffset);
+                                                        }
+                                                        else if (semantic.Equals("texcoord") && (source.Contains("map3") || source.Contains("uv3")))
+                                                        {
+                                                            vertexIndexDict.Add("vertexAlpha", inputOffset);
+                                                        }
+                                                        else if (semantic.Equals("color"))
+                                                        {
+                                                            vertexIndexDict.Add("vertexColor", inputOffset);
                                                         }
                                                     }
                                                     else
-                                                    {
-                                                        if (semantic.ToLower().Equals("texcoord") &&
-                                                            source.ToLower().Contains("map0"))
-                                                        {
-                                                            vertexIndexDict.Add("textureCoordinate", inputOffset);
-                                                        }
-                                                        else if (semantic.ToLower().Equals("texcoord") &&
-                                                                 source.ToLower().Contains("map1"))
-                                                        {
-                                                            vertexIndexDict.Add("textureCoordinate1", inputOffset);
-                                                        }
-                                                        else if (semantic.ToLower().Equals("texcoord") &&
-                                                                 source.ToLower().Contains("map2"))
-                                                        {
-                                                            vertexIndexDict.Add("vertexAlpha", inputOffset);
-                                                        }
+													{
+                                                        throw new Exception($"Tool not supported: {toolType}");
                                                     }
                                                 }
                                                 else
@@ -679,7 +710,6 @@ namespace xivModdingFramework.Models.FileTypes
                                             }
 
                                         }
-
                                         break;
                                     }
                                 }
@@ -692,8 +722,17 @@ namespace xivModdingFramework.Models.FileTypes
                             // If the current attribute is a mesh part
                             if (atr.Contains("."))
                             {
-                                // Get part number
-                                var meshPartNum = int.Parse(atr.Substring(atr.LastIndexOf(".") + 1));
+                                var meshPartNum = 0;
+                                try
+                                {
+                                    // Get part number
+                                    meshPartNum = int.Parse(atr.Substring(atr.LastIndexOf(".") + 1));
+                                }
+                                catch
+                                {
+                                    throw new Exception($"Could not read mesh number of mesh: {atr}\n\n" +
+                                                    $"Please make sure your mesh name ends with the mesh/part number.");
+                                }                                
 
                                 if (!meshPartDataDictionary.ContainsKey(meshNum))
                                 {
@@ -741,7 +780,7 @@ namespace xivModdingFramework.Models.FileTypes
                             ColladaData colladaData;
 
                             // If the collada file was saved in blender
-                            if (blender)
+                            if (toolType == ToolType.Blender)
                             {
                                 while (reader.Read())
                                 {
@@ -770,8 +809,16 @@ namespace xivModdingFramework.Models.FileTypes
                             // If it is a mesh part get part number, and get the Collada Data associated with it
                             if (atr.Contains("."))
                             {
-                                var meshPartNum = int.Parse(atr.Substring((atr.LastIndexOf(".") + 1), atr.LastIndexOf("-") - (atr.LastIndexOf(".") + 1)));
-                                colladaData = partDataDictionary[meshPartNum];
+                                if (toolType == ToolType.Blender)
+                                {
+                                    int meshPartNum = int.Parse(atr.Substring((atr.LastIndexOf(".") + 1), atr.Length - (atr.LastIndexOf(".") + 1)));
+                                    colladaData = partDataDictionary[meshPartNum];
+                                }
+                                else
+                                {
+                                    int meshPartNum = int.Parse(atr.Substring((atr.LastIndexOf(".") + 1), atr.LastIndexOf("-") - (atr.LastIndexOf(".") + 1)));
+                                    colladaData = partDataDictionary[meshPartNum];
+                                }
                             }
                             else
                             {
@@ -858,32 +905,30 @@ namespace xivModdingFramework.Models.FileTypes
                 }
             }
 
-            // Make sure that mesh parts are sequential
-            var fixedPartDataDictionary = new Dictionary<int, Dictionary<int, ColladaData>>();
-
+            // Check for vertex limit and missing weights
             foreach (var mesh in meshPartDataDictionary)
             {
-                fixedPartDataDictionary.Add(mesh.Key, new Dictionary<int, ColladaData>());
-
                 var meshPartData = mesh.Value;
-
-                var partNum = -1;
-                if (mesh.Value.Count > 0)
-                {
-                    partNum = meshPartData.First().Key - 1;
-                }
+                var totalVerts = 0;
 
                 foreach (var part in meshPartData)
                 {
-                    var newPartNum = partNum + 1;
+                    if (part.Value.Vcounts.Count < (part.Value.Positions.Count / 3) && !isHousingItem)
+                    {
+                        throw new Exception($"Vertices with missing weights detected in mesh {mesh.Key}.{part.Key}");
+                    }
+                    totalVerts += part.Value.Vcounts.Count;
+                }
 
-                    fixedPartDataDictionary[mesh.Key].Add(newPartNum, part.Value);
+                if (totalVerts >= ushort.MaxValue)
+                {
+                    throw new Exception($"Maximum amount of 65535 vertices per mesh group exceeded.\n\n" +
+                        $"Vertex count for group {mesh.Key}: {totalVerts}");
 
-                    partNum++;
                 }
             }
 
-            return fixedPartDataDictionary;
+            return meshPartDataDictionary.ToDictionary(x => x.Key, x => x.Value.ToDictionary(y => y.Key, y => y.Value));
         }
 
         /// <summary>
@@ -1041,23 +1086,42 @@ namespace xivModdingFramework.Models.FileTypes
 
                             meshNameDict.Add(id, atr);
 
-                            var meshNum = int.Parse(atr.Substring(atr.LastIndexOf("_", StringComparison.Ordinal) + 1, 1));
+                            var meshNum = 0;
 
-                            // Determines whether the mesh has parts and gets the mesh number
-                            if (atr.Contains("."))
+                            try
                             {
-                                meshNum = int.Parse(atr.Substring(atr.LastIndexOf("_", StringComparison.Ordinal) + 1,
-                                    atr.LastIndexOf(".", StringComparison.Ordinal) -
-                                    (atr.LastIndexOf("_", StringComparison.Ordinal) + 1)));
-                            }
+                                meshNum = int.Parse(atr.Substring(atr.LastIndexOf("_", StringComparison.Ordinal) + 1, 1));
 
+                                // Determines whether the mesh has parts and gets the mesh number
+                                if (atr.Contains("."))
+                                {
+                                    meshNum = int.Parse(atr.Substring(atr.LastIndexOf("_", StringComparison.Ordinal) + 1,
+                                        atr.LastIndexOf(".", StringComparison.Ordinal) -
+                                        (atr.LastIndexOf("_", StringComparison.Ordinal) + 1)));
+                                }
+                            }
+                            catch
+                            {
+                                throw new Exception($"Could not read mesh number of mesh: {atr}\n\n" +
+                                                    $"Please make sure your mesh name ends with the mesh/part number.");
+                            }
+                        
                             // If the current attribute is a mesh part
                             if (atr.Contains("."))
                             {
-                                // Get part number
-                                var numStr = atr.Substring(atr.LastIndexOf(".") + 1);
-                                numStr = numStr.EndsWith("Mesh", StringComparison.OrdinalIgnoreCase) ? numStr.Remove(numStr.Length - 4):numStr;
-                                var meshPartNum = int.Parse(numStr);
+                                var meshPartNum = 0;
+                                try
+                                {
+                                    // Get part number
+                                    var numStr = atr.Substring(atr.LastIndexOf(".") + 1);
+                                    numStr = numStr.EndsWith("Mesh", StringComparison.OrdinalIgnoreCase) ? numStr.Remove(numStr.Length - 4):numStr;
+                                    meshPartNum = int.Parse(numStr);
+                                }
+                                catch
+                                {
+                                    throw new Exception($"Could not read mesh number of mesh: {atr}\n\n" +
+                                                        $"Please make sure your mesh name ends with the mesh/part number.");
+                                }                            
 
                                 if (meshPartDictionary.ContainsKey(meshNum))
                                 {
@@ -1091,7 +1155,7 @@ namespace xivModdingFramework.Models.FileTypes
                 }
             }
 
-            if (!meshPartDictionary.ContainsKey(0))
+            if (!meshPartDictionary.ContainsKey(0) || (meshPartDictionary.Keys.Max() + 1) != meshPartDictionary.Keys.Count)
             {
                 var meshes = "";
                 foreach (var key in meshPartDictionary.Keys)
@@ -1099,7 +1163,7 @@ namespace xivModdingFramework.Models.FileTypes
                     meshes += $"{key} ";
                 }
 
-                throw new Exception($"The DAE file does not contain Mesh 0.\nModels must have a Mesh 0.\n\nMesh Numbers Found: {meshes}");
+                throw new Exception($"The DAE file does not contain consecutive mesh numbers.\nModels must have consecutive mesh numbers starting at 0.\n\nMesh Numbers Found: {meshes}");
             }
 
             return (meshPartDictionary, boneStringList);
@@ -1177,7 +1241,7 @@ namespace xivModdingFramework.Models.FileTypes
                 xmlWriter.WriteAttributeString("name", modelName + "_" + i + "_Diffuse_bmp");
                 //<init_from>
                 xmlWriter.WriteStartElement("init_from");
-                xmlWriter.WriteString(modelName + "_" + i + "_Diffuse.bmp");
+                xmlWriter.WriteString(modelName + "_" + meshData[i].MeshInfo.MaterialIndex.ToString() + "_Diffuse.bmp");
                 xmlWriter.WriteEndElement();
                 //</init_from>
                 xmlWriter.WriteEndElement();
@@ -1188,7 +1252,7 @@ namespace xivModdingFramework.Models.FileTypes
                 xmlWriter.WriteAttributeString("name", modelName + "_" + i + "_Normal_bmp");
                 //<init_from>
                 xmlWriter.WriteStartElement("init_from");
-                xmlWriter.WriteString(modelName + "_" + i + "_Normal.bmp");
+                xmlWriter.WriteString(modelName + "_" + meshData[i].MeshInfo.MaterialIndex.ToString() + "_Normal.bmp");
                 xmlWriter.WriteEndElement();
                 //</init_from>
                 xmlWriter.WriteEndElement();
@@ -1203,7 +1267,7 @@ namespace xivModdingFramework.Models.FileTypes
                 xmlWriter.WriteAttributeString("name", modelName + "_" + i + "_Specular_bmp");
                 //<init_from>
                 xmlWriter.WriteStartElement("init_from");
-                xmlWriter.WriteString(modelName + "_" + i + "_Specular.bmp");
+                xmlWriter.WriteString(modelName + "_" + meshData[i].MeshInfo.MaterialIndex.ToString() + "_Specular.bmp");
                 xmlWriter.WriteEndElement();
                 //</init_from>
                 xmlWriter.WriteEndElement();
@@ -1214,7 +1278,7 @@ namespace xivModdingFramework.Models.FileTypes
                 xmlWriter.WriteAttributeString("name", modelName + "_" + i + "_Alpha_bmp");
                 //<init_from>
                 xmlWriter.WriteStartElement("init_from");
-                xmlWriter.WriteString(modelName + "_" + i + "_Alpha.bmp");
+                xmlWriter.WriteString(modelName + "_" + meshData[i].MeshInfo.MaterialIndex.ToString() + "_Alpha.bmp");
                 xmlWriter.WriteEndElement();
                 //</init_from>
                 xmlWriter.WriteEndElement();
@@ -1703,6 +1767,7 @@ namespace xivModdingFramework.Models.FileTypes
                     {
                         var vertexColors = meshList[i].VertexData.Colors.GetRange(totalVertices, totalCount);
 
+                        // Indexcount <= 3 because the Autodesk importer crashes when there is only a single tri for whatever reason
                         if (!(indexCount <= 3 && _pluginTarget.Equals(XivStrings.AutodeskCollada)))
                         {
                             //<source>
@@ -1892,6 +1957,7 @@ namespace xivModdingFramework.Models.FileTypes
 
                     if (meshList[i].VertexData.Colors != null && meshList[i].VertexData.Colors.Count > 0)
                     {
+                        // Indexcount <= 3 because the Autodesk importer crashes when there is only a single tri for whatever reason
                         if (!(indexCount <= 3 && _pluginTarget.Equals(XivStrings.AutodeskCollada)))
                         {
                             //<source>
@@ -2108,6 +2174,7 @@ namespace xivModdingFramework.Models.FileTypes
                     xmlWriter.WriteEndElement();
                     //</input>
 
+                    // Indexcount <= 3 because the Autodesk importer crashes when there is only a single tri for whatever reason
                     if (!(indexCount <= 3 && _pluginTarget.Equals(XivStrings.AutodeskCollada)))
                     {
                         if (meshList[i].VertexData.Colors.Count > 0)
@@ -3259,20 +3326,26 @@ namespace xivModdingFramework.Models.FileTypes
 
                 var meshPartCount = meshDataList[i].MeshPartList.Count;
 
-                if (meshPartCount == 0)
-                {
-                    meshPartCount = 1;
-                }
+                // Determine the last non-dummy mesh part
+                var lastNonDummy = meshPartCount;
 
                 for (var j = 0; j < meshPartCount; j++)
                 {
-                    var partString = "." + j;
+                    if (meshDataList[i].MeshPartList[j].IndexCount != 0)
+                    {
+                        lastNonDummy = j;
+                    }
+                }
 
-                    if (j == 0)
+                // Only add nodes up until the last non-dummy mesh to not clutter the DAE with dummies
+                for (var k = 0; k <= lastNonDummy; k++)
+                {
+                    var partString = "." + k;
+
+                    if (k == 0)
                     {
                         partString = "";
                     }
-
 
                     //<node>
                     xmlWriter.WriteStartElement("node");
