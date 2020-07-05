@@ -53,7 +53,7 @@ namespace xivModdingFramework.Textures.FileTypes
             var index = new Index(_gameDirectory);
             var avfx = new Avfx(_gameDirectory, _dataFile);
 
-            var itemType = ItemType.GetItemType(itemModel);
+            var itemType = ItemType.GetPrimaryItemType(itemModel);
 
             var vfxPath = await GetVfxPath(itemModel, itemType);
 
@@ -65,14 +65,23 @@ namespace xivModdingFramework.Textures.FileTypes
                 throw new Exception($"Could not find offset for vfx path {vfxPath.Folder}/{vfxPath.File}");
             }
 
-            var aTexPaths = await avfx.GetATexPaths(vfxOffset);
+            var aTexPaths = new List<string>();
+
+            try
+            {
+                aTexPaths = await avfx.GetATexPaths(vfxOffset);
+            }
+            catch (Exception e)
+            {
+                throw new Exception(e.Message);
+            }            
 
             foreach (var atexPath in aTexPaths)
             {
                 var ttp = new TexTypePath
                 {
                     DataFile = _dataFile,
-                    Name = Path.GetFileNameWithoutExtension(atexPath),
+                    Name = "VFX: " + Path.GetFileNameWithoutExtension(atexPath),
                     Path = atexPath
                 };
 
@@ -123,11 +132,11 @@ namespace xivModdingFramework.Textures.FileTypes
         {
             // get the vfx version from the imc file
             var imc = new Imc(_gameDirectory, _dataFile);
-            var imcInfo = await imc.GetImcInfo(itemModel, itemModel.ModelInfo);
+            var imcInfo = await imc.GetImcInfo(itemModel);
             int vfx = imcInfo.Vfx;
 
-            var id = itemModel.ModelInfo.ModelID.ToString().PadLeft(4, '0');
-            var bodyVer = itemModel.ModelInfo.Body.ToString().PadLeft(4, '0');
+            var id = itemModel.ModelInfo.PrimaryID.ToString().PadLeft(4, '0');
+            var bodyVer = itemModel.ModelInfo.SecondaryID.ToString().PadLeft(4, '0');
 
             string vfxFolder, vfxFile;
 

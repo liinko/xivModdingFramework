@@ -17,14 +17,14 @@
 namespace xivModdingFramework.Variants.DataContainers
 {
     /// <summary>
-    /// This class holds IMC information
+    /// The IMC information for a Specific Variant of a Specific Slot in a Gear Set.
     /// </summary>
     public class XivImc
     {
         /// <summary>
-        /// The IMC Version
+        /// The Material Set / Variant #
         /// </summary>
-        public ushort Version { get; set; }
+        public ushort Variant { get; set; }
 
         /// <summary>
         /// The IMC mask data

@@ -19,6 +19,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using TeximpNet.Compression;
 using TeximpNet.DDS;
@@ -52,6 +53,23 @@ namespace xivModdingFramework.Textures.FileTypes
         private readonly XivDataFile _dataFile;
         private Dictionary<string, int> _indexFileDictionary;
         private readonly object texLock = new object();
+
+        /// <summary>
+        /// Gets the path to the default blank texture for a given texture format.
+        /// For use when making new texture files.
+        /// </summary>
+        /// <param name="format"></param>
+        /// <returns></returns>
+        public static DirectoryInfo GetDefaultTexturePath(XivTexType usageType)
+        {
+            //new DirectoryInfo(Directory.GetFiles("AddNewTexturePartTexTmps", $"{Path.GetFileNameWithoutExtension(oldTexPath)}.dds", SearchOption.AllDirectories)[0]);
+            var strings = Directory.GetFiles("Resources\\DefaultTextures", usageType.ToString() + ".dds", SearchOption.AllDirectories);
+            if(strings.Length == 0)
+            {
+                strings = Directory.GetFiles("Resources\\DefaultTextures", XivTexType.Other.ToString() + ".dds", SearchOption.AllDirectories);
+            }
+            return new DirectoryInfo(strings[0]);
+        }
 
         public Tex(DirectoryInfo gameDirectory)
         {
@@ -134,7 +152,7 @@ namespace xivModdingFramework.Textures.FileTypes
 
             if (offset == 0)
             {
-                throw new Exception($"Could not find offest for {ttp.Path}");
+                throw new Exception($"Could not find offset for {ttp.Path}");
             }
 
             XivTex xivTex;
@@ -169,23 +187,23 @@ namespace xivModdingFramework.Textures.FileTypes
         /// <returns>A list of part characters</returns>
         public async Task<List<string>> GetTexturePartList(IItemModel itemModel, XivRace xivRace, XivDataFile dataFile, string type = "Primary")
         {
-            var itemType = ItemType.GetItemType(itemModel);
+            var itemType = ItemType.GetPrimaryItemType(itemModel);
 
             var version = "0001";
 
-            var id = itemModel.ModelInfo.ModelID.ToString().PadLeft(4, '0');
-            var bodyVer = itemModel.ModelInfo.Body.ToString().PadLeft(4, '0');
-            var itemCategory = itemModel.ItemCategory;
+            var id = itemModel.ModelInfo.PrimaryID.ToString().PadLeft(4, '0');
+            var bodyVer = itemModel.ModelInfo.SecondaryID.ToString().PadLeft(4, '0');
+            var itemCategory = itemModel.SecondaryCategory;
 
             if (type.Equals("Secondary"))
             {
                 var xivGear = itemModel as XivGear;
 
-                id = xivGear.SecondaryModelInfo.ModelID.ToString().PadLeft(4, '0');
-                bodyVer = xivGear.SecondaryModelInfo.Body.ToString().PadLeft(4, '0');
+                id = xivGear.SecondaryModelInfo.PrimaryID.ToString().PadLeft(4, '0');
+                bodyVer = xivGear.SecondaryModelInfo.SecondaryID.ToString().PadLeft(4, '0');
 
                 var imc = new Imc(_gameDirectory, xivGear.DataFile);
-                version = (await imc.GetImcInfo(itemModel, xivGear.SecondaryModelInfo)).Version.ToString().PadLeft(4, '0');
+                version = (await imc.GetImcInfo(itemModel, true)).Variant.ToString().PadLeft(4, '0');
 
                 if (imc.ChangedType)
                 {
@@ -200,11 +218,11 @@ namespace xivModdingFramework.Textures.FileTypes
                 {
                     // Get the mtrl version for the given item from the imc file
                     var imc = new Imc(_gameDirectory, dataFile);
-                    version = (await imc.GetImcInfo(itemModel, itemModel.ModelInfo)).Version.ToString().PadLeft(4, '0');
+                    version = (await imc.GetImcInfo(itemModel)).Variant.ToString().PadLeft(4, '0');
                 }
             }
 
-            var parts = new[] { 'a', 'b', 'c', 'd', 'e', 'f' };
+            var parts = Constants.Alphabet;
             var race = xivRace.GetRaceCode();
 
             string mtrlFolder = "", mtrlFile = "";
@@ -623,35 +641,29 @@ namespace xivModdingFramework.Textures.FileTypes
                             break;
                     }
 
-                    if (textureType == xivTex.TextureFormat)
+                    xivTex.TextureFormat = textureType;
+                    var uncompressedLength = (int)new FileInfo(ddsFileDirectory.FullName).Length - 128;
+                    var newTex = new List<byte>();
+
+                    if (!xivTex.TextureTypeAndPath.Path.Contains(".atex"))
                     {
-                        var uncompressedLength = (int)new FileInfo(ddsFileDirectory.FullName).Length - 128;
-                        var newTex = new List<byte>();
+                        var DDSInfo = await DDS.ReadDDS(br, xivTex, newWidth, newHeight, newMipCount);
 
-                        if (!xivTex.TextureTypeAndPath.Path.Contains(".atex"))
-                        {
-                            var DDSInfo = await DDS.ReadDDS(br, xivTex, newWidth, newHeight, newMipCount);
+                        newTex.AddRange(_dat.MakeType4DatHeader(xivTex, DDSInfo.mipPartOffsets, DDSInfo.mipPartCounts, uncompressedLength, newMipCount, newWidth, newHeight));
+                        newTex.AddRange(MakeTextureInfoHeader(xivTex, newWidth, newHeight, newMipCount));
+                        newTex.AddRange(DDSInfo.compressedDDS);
 
-                            newTex.AddRange(_dat.MakeType4DatHeader(xivTex, DDSInfo.mipPartOffsets, DDSInfo.mipPartCounts, uncompressedLength, newMipCount, newWidth, newHeight));
-                            newTex.AddRange(MakeTextureInfoHeader(xivTex, newWidth, newHeight, newMipCount));
-                            newTex.AddRange(DDSInfo.compressedDDS);
-
-                            offset = await _dat.WriteToDat(newTex, modEntry, xivTex.TextureTypeAndPath.Path,
-                                item.ItemCategory, item.Name, xivTex.TextureTypeAndPath.DataFile, source, 4);
-                        }
-                        else
-                        {
-                            br.BaseStream.Seek(128, SeekOrigin.Begin);
-                            newTex.AddRange(MakeTextureInfoHeader(xivTex, newWidth, newHeight, newMipCount));
-                            newTex.AddRange(br.ReadBytes(uncompressedLength));
-
-                            offset = await _dat.ImportType2Data(newTex.ToArray(), item.Name, xivTex.TextureTypeAndPath.Path,
-                                item.ItemCategory, source);
-                        }
+                        offset = await _dat.WriteToDat(newTex, modEntry, xivTex.TextureTypeAndPath.Path,
+                            item.SecondaryCategory, item.Name, xivTex.TextureTypeAndPath.DataFile, source, 4);
                     }
                     else
                     {
-                        throw new Exception($"Incorrect file type. Expected: {xivTex.TextureFormat}  Given: {textureType}");
+                        br.BaseStream.Seek(128, SeekOrigin.Begin);
+                        newTex.AddRange(MakeTextureInfoHeader(xivTex, newWidth, newHeight, newMipCount));
+                        newTex.AddRange(br.ReadBytes(uncompressedLength));
+
+                        offset = await _dat.ImportType2Data(newTex.ToArray(), item.Name, xivTex.TextureTypeAndPath.Path,
+                            item.SecondaryCategory, source);
                     }
                 }
             }
@@ -663,13 +675,13 @@ namespace xivModdingFramework.Textures.FileTypes
             return offset;
         }
 
-        public async Task<int> TexBMPImporter(XivTex xivTex, IItem item, DirectoryInfo bmpFileDirectory, string source)
+        public async Task<int> TexImporter(XivTex xivTex, IItem item, DirectoryInfo fileDirectory, string source)
         {
             var offset = 0;
 
             var modding = new Modding(_gameDirectory);
 
-            if (File.Exists(bmpFileDirectory.FullName))
+            if (File.Exists(fileDirectory.FullName))
             {
                 // Check if the texture being imported has been imported before
                 var modEntry = await modding.TryGetModEntry(xivTex.TextureTypeAndPath.Path);
@@ -679,7 +691,7 @@ namespace xivModdingFramework.Textures.FileTypes
                 switch (xivTex.TextureFormat)
                 {
                     case XivTexFormat.DXT1:
-                        compressionFormat = CompressionFormat.BC1;
+                        compressionFormat = CompressionFormat.BC1a;
                         break;
                     case XivTexFormat.DXT5:
                         compressionFormat = CompressionFormat.BC3;
@@ -691,13 +703,16 @@ namespace xivModdingFramework.Textures.FileTypes
                         throw new Exception($"Format {xivTex.TextureFormat} is not currently supported for BMP import\n\nPlease use the DDS import option instead.");
                 }
 
-                using (var surface = Surface.LoadFromFile(bmpFileDirectory.FullName))
+                using (var surface = Surface.LoadFromFile(fileDirectory.FullName))
                 {
+                    if (surface == null)
+                        throw new FormatException($"Unsupported texture format");
+
                     surface.FlipVertically();
 
                     using (var compressor = new Compressor())
                     {
-                        compressor.Input.GenerateMipmaps = true;
+                        compressor.Input.SetMipmapGeneration(xivTex.MipMapCount > 0, xivTex.MipMapCount);
                         compressor.Input.SetData(surface);
                         compressor.Compression.Format = compressionFormat;
                         compressor.Compression.SetBGRAPixelFormat();
@@ -782,7 +797,7 @@ namespace xivModdingFramework.Textures.FileTypes
                                 newTex.AddRange(DDSInfo.compressedDDS);
 
                                 offset = await _dat.WriteToDat(newTex, modEntry, xivTex.TextureTypeAndPath.Path,
-                                    item.ItemCategory, item.Name, xivTex.TextureTypeAndPath.DataFile, source, 4);
+                                    item.SecondaryCategory, item.Name, xivTex.TextureTypeAndPath.DataFile, source, 4);
                             }
                             else
                             {
@@ -791,7 +806,7 @@ namespace xivModdingFramework.Textures.FileTypes
                                 newTex.AddRange(br.ReadBytes((int)uncompressedLength));
 
                                 offset = await _dat.ImportType2Data(newTex.ToArray(), item.Name, xivTex.TextureTypeAndPath.Path,
-                                    item.ItemCategory, source);
+                                    item.SecondaryCategory, source);
                             }
                         }
                         else
@@ -805,7 +820,7 @@ namespace xivModdingFramework.Textures.FileTypes
             }
             else
             {
-                throw new IOException($"Could not find file: {bmpFileDirectory.FullName}");
+                throw new IOException($"Could not find file: {fileDirectory.FullName}");
             }
 
             return offset;
@@ -822,91 +837,136 @@ namespace xivModdingFramework.Textures.FileTypes
         {
             if (File.Exists(ddsFileDirectory.FullName))
             {
-                using (var br = new BinaryReader(File.OpenRead(ddsFileDirectory.FullName)))
+
+                var modding = new Modding(_gameDirectory);
+                // Check if the texture being imported has been imported before
+                var modEntry = await modding.TryGetModEntry(xivTex.TextureTypeAndPath.Path);
+                var ddsContainer = new DDSContainer();
+                CompressionFormat compressionFormat;
+
+                switch (xivTex.TextureFormat)
                 {
-                    br.BaseStream.Seek(12, SeekOrigin.Begin);
+                    case XivTexFormat.DXT1:
+                        compressionFormat = CompressionFormat.BC1a;
+                        break;
+                    case XivTexFormat.DXT5:
+                        compressionFormat = CompressionFormat.BC3;
+                        break;
+                    case XivTexFormat.A8R8G8B8:
+                        compressionFormat = CompressionFormat.BGRA;
+                        break;
+                    default:
+                        throw new Exception($"Format {xivTex.TextureFormat} is not currently supported for BMP import\n\nPlease use the DDS import option instead.");
+                }
 
-                    var newHeight = br.ReadInt32();
-                    var newWidth = br.ReadInt32();
-                    br.ReadBytes(8);
-                    var newMipCount = br.ReadInt32();
+                using (var surface = Surface.LoadFromFile(ddsFileDirectory.FullName))
+                {
+                    if (surface == null)
+                        throw new FormatException($"Unsupported texture format");
 
-                    if (newHeight % 2 != 0 || newWidth % 2 != 0)
+                    surface.FlipVertically();
+
+                    using (var compressor = new Compressor())
                     {
-                        throw new Exception("Resolution must be a multiple of 2");
+                        compressor.Input.SetMipmapGeneration(xivTex.MipMapCount > 0, xivTex.MipMapCount);
+                        compressor.Input.SetData(surface);
+                        compressor.Compression.Format = compressionFormat;
+                        compressor.Compression.SetBGRAPixelFormat();
+
+                        compressor.Process(out ddsContainer);
                     }
+                }
 
-                    br.BaseStream.Seek(80, SeekOrigin.Begin);
+                using (var ddsMemoryStream = new MemoryStream())
+                {
+                    ddsContainer.Write(ddsMemoryStream, DDSFlags.None);
 
-                    var textureFlags = br.ReadInt32();
-                    var texType = br.ReadInt32();
-                    XivTexFormat textureType;
-
-                    if (DDSType.ContainsKey(texType))
+                    using (var br = new BinaryReader(ddsMemoryStream))
                     {
-                        textureType = DDSType[texType];
-                    }
-                    else
-                    {
-                        throw new Exception($"DDS Type ({texType}) not recognized.");
-                    }
+                        br.BaseStream.Seek(12, SeekOrigin.Begin);
 
-                    switch (textureFlags)
-                    {
-                        case 2 when textureType == XivTexFormat.A8R8G8B8:
-                            textureType = XivTexFormat.A8;
-                            break;
-                        case 65 when textureType == XivTexFormat.A8R8G8B8:
-                            var bpp = br.ReadInt32();
-                            if (bpp == 32)
-                            {
-                                textureType = XivTexFormat.A8R8G8B8;
-                            }
-                            else
-                            {
-                                var red = br.ReadInt32();
+                        var newHeight = br.ReadInt32();
+                        var newWidth = br.ReadInt32();
+                        br.ReadBytes(8);
+                        var newMipCount = br.ReadInt32();
 
-                                switch (red)
-                                {
-                                    case 31744:
-                                        textureType = XivTexFormat.A1R5G5B5;
-                                        break;
-                                    case 3840:
-                                        textureType = XivTexFormat.A4R4G4B4;
-                                        break;
-                                }
-                            }
-
-                            break;
-                    }
-
-                    if (textureType == xivTex.TextureFormat)
-                    {
-                        var uncompressedLength = (int)new FileInfo(ddsFileDirectory.FullName).Length - 128;
-                        var newTex = new List<byte>();
-
-                        if (!xivTex.TextureTypeAndPath.Path.Contains(".atex"))
+                        if (newHeight % 2 != 0 || newWidth % 2 != 0)
                         {
-                            var DDSInfo = await DDS.ReadDDS(br, xivTex, newWidth, newHeight, newMipCount);
+                            throw new Exception("Resolution must be a multiple of 2");
+                        }
 
-                            newTex.AddRange(_dat.MakeType4DatHeader(xivTex, DDSInfo.mipPartOffsets, DDSInfo.mipPartCounts, uncompressedLength, newMipCount, newWidth, newHeight));
-                            newTex.AddRange(MakeTextureInfoHeader(xivTex, newWidth, newHeight, newMipCount));
-                            newTex.AddRange(DDSInfo.compressedDDS);
+                        br.BaseStream.Seek(80, SeekOrigin.Begin);
 
-                            return newTex.ToArray();
+                        var textureFlags = br.ReadInt32();
+                        var texType = br.ReadInt32();
+                        XivTexFormat textureType;
+
+                        if (DDSType.ContainsKey(texType))
+                        {
+                            textureType = DDSType[texType];
                         }
                         else
                         {
-                            br.BaseStream.Seek(128, SeekOrigin.Begin);
-                            newTex.AddRange(MakeTextureInfoHeader(xivTex, newWidth, newHeight, newMipCount));
-                            newTex.AddRange(br.ReadBytes(uncompressedLength));
-
-                            return newTex.ToArray();
+                            throw new Exception($"DDS Type ({texType}) not recognized.");
                         }
-                    }
-                    else
-                    {
-                        throw new Exception($"Incorrect file type. Expected: {xivTex.TextureFormat}  Given: {textureType}");
+
+                        switch (textureFlags)
+                        {
+                            case 2 when textureType == XivTexFormat.A8R8G8B8:
+                                textureType = XivTexFormat.A8;
+                                break;
+                            case 65 when textureType == XivTexFormat.A8R8G8B8:
+                                var bpp = br.ReadInt32();
+                                if (bpp == 32)
+                                {
+                                    textureType = XivTexFormat.A8R8G8B8;
+                                }
+                                else
+                                {
+                                    var red = br.ReadInt32();
+
+                                    switch (red)
+                                    {
+                                        case 31744:
+                                            textureType = XivTexFormat.A1R5G5B5;
+                                            break;
+                                        case 3840:
+                                            textureType = XivTexFormat.A4R4G4B4;
+                                            break;
+                                    }
+                                }
+
+                                break;
+                        }
+
+                        if (textureType == xivTex.TextureFormat)
+                        {
+                            var uncompressedLength = (int)new FileInfo(ddsFileDirectory.FullName).Length - 128;
+                            var newTex = new List<byte>();
+
+                            if (!xivTex.TextureTypeAndPath.Path.Contains(".atex"))
+                            {
+                                var DDSInfo = await DDS.ReadDDS(br, xivTex, newWidth, newHeight, newMipCount);
+
+                                newTex.AddRange(_dat.MakeType4DatHeader(xivTex, DDSInfo.mipPartOffsets, DDSInfo.mipPartCounts, uncompressedLength, newMipCount, newWidth, newHeight));
+                                newTex.AddRange(MakeTextureInfoHeader(xivTex, newWidth, newHeight, newMipCount));
+                                newTex.AddRange(DDSInfo.compressedDDS);
+
+                                return newTex.ToArray();
+                            }
+                            else
+                            {
+                                br.BaseStream.Seek(128, SeekOrigin.Begin);
+                                newTex.AddRange(MakeTextureInfoHeader(xivTex, newWidth, newHeight, newMipCount));
+                                newTex.AddRange(br.ReadBytes(uncompressedLength));
+
+                                return newTex.ToArray();
+                            }
+                        }
+                        else
+                        {
+                            throw new Exception($"Incorrect file type. Expected: {xivTex.TextureFormat}  Given: {textureType}");
+                        }
                     }
                 }
             }
@@ -930,8 +990,55 @@ namespace xivModdingFramework.Textures.FileTypes
             var colorSetData = new List<Half>();
             byte[] colorSetExtraData = null;
 
+
+            colorSetData = GetColorsetDataFromDDS(ddsFileDirectory);
+            colorSetExtraData = GetColorsetExtraDataFromDDS(ddsFileDirectory);
+
+            // Replace the color set data with the imported data
+            xivMtrl.ColorSetData = colorSetData;
+            xivMtrl.ColorSetExtraData = colorSetExtraData;
+            if (xivMtrl.Unknown2.Length > 0)
+            {
+                // This byte enables the dye set if it's not already enabled.
+                xivMtrl.Unknown2[0] = 12;
+            }
+
+            var mtrl = new Mtrl(_gameDirectory, xivMtrl.TextureTypePathList[0].DataFile, lang);
+            return await mtrl.ImportMtrl(xivMtrl, item, source);
+        }
+
+
+
+        /// <summary>
+        /// Gets the raw Colorset data list from a dds file.
+        /// </summary>
+        /// <param name="ddsFileDirectory"></param>
+        /// <returns></returns>
+        public static List<Half> GetColorsetDataFromDDS(DirectoryInfo ddsFileDirectory)
+        {
             using (var br = new BinaryReader(File.OpenRead(ddsFileDirectory.FullName)))
             {
+                // Check DDS type
+                br.BaseStream.Seek(84, SeekOrigin.Begin);
+
+                var texType = br.ReadInt32();
+                XivTexFormat textureType;
+
+                if (DDSType.ContainsKey(texType))
+                {
+                    textureType = DDSType[texType];
+                }
+                else
+                {
+                    throw new Exception($"DDS Type ({texType}) not recognized. Expecting A16B16G16R16F.");
+                }
+
+                if (textureType != XivTexFormat.A16B16G16R16F)
+                {
+                    throw new Exception($"Incorrect file type. Expected: A16B16G16R16F  Given: {textureType}");
+                }
+                var colorSetData = new List<Half>(256);
+
                 // skip DDS header
                 br.BaseStream.Seek(128, SeekOrigin.Begin);
 
@@ -939,29 +1046,43 @@ namespace xivModdingFramework.Textures.FileTypes
                 // this reads 256 ushort values which is 256 x 2 = 512
                 for (var i = 0; i < 256; i++)
                 {
-                    colorSetData.Add(new Half(br.ReadUInt16()));
+                    colorSetData.Add((new Half(br.ReadUInt16())));
                 }
-            }
 
-            // If the colorset size is 544, it contains extra data that must be imported
-            if (xivMtrl.ColorSetDataSize == 544)
+                return colorSetData;
+            }
+        }
+
+        /// <summary>
+        /// Retreives the associated .dat file for colorset dye data, if it exists.
+        /// This takes in the .DDS FILE path, not the .DAT file path.
+        /// </summary>
+        /// <param name="file"></param>
+        /// <returns></returns>
+        public static byte[] GetColorsetExtraDataFromDDS(DirectoryInfo file)
+        {
+            var flagsPath = Path.Combine(Path.GetDirectoryName(file.FullName), (Path.GetFileNameWithoutExtension(file.FullName) + ".dat"));
+
+            byte[] colorSetExtraData;
+            if (File.Exists(flagsPath))
             {
-                var flagsPath = Path.Combine(Path.GetDirectoryName(ddsFileDirectory.FullName), (Path.GetFileNameWithoutExtension(ddsFileDirectory.FullName) + ".dat"));
+                // The extra data after the colorset is always 32 bytes 
+                // This reads 16 ushort values which is 16 x 2 = 32
+                colorSetExtraData = File.ReadAllBytes(flagsPath);
 
-                if (File.Exists(flagsPath))
+                // If for whatever reason there is a .dat file but it's missing data
+                if (colorSetExtraData.Length != 32)
                 {
-                    // The extra data after the colorset is always 32 bytes 
-                    // This reads 16 ushort values which is 16 x 2 = 32
-                    colorSetExtraData = File.ReadAllBytes(flagsPath);
+                    // Set all dye modifiers to 0 (undyeable)
+                    colorSetExtraData = new byte[32];
                 }
             }
-
-            // Replace the color set data with the imported data
-            xivMtrl.ColorSetData = colorSetData;
-            xivMtrl.ColorSetExtraData = colorSetExtraData;
-
-            var mtrl = new Mtrl(_gameDirectory, xivMtrl.TextureTypePathList[0].DataFile, lang);
-            return await mtrl.ImportMtrl(xivMtrl, item, source);
+            else
+            {
+                // If .dat file is missing set all values to 0 (undyeable)
+                colorSetExtraData = new byte[32];
+            }
+            return colorSetExtraData;
         }
 
         /// <summary>
@@ -973,44 +1094,27 @@ namespace xivModdingFramework.Textures.FileTypes
         /// <returns>The raw mtrl data</returns>
         public byte[] DDStoMtrlData(XivMtrl xivMtrl, DirectoryInfo ddsFileDirectory, IItem item, XivLanguage lang)
         {
-            var colorSetData = new List<Half>();
+            var colorSetData = GetColorsetDataFromDDS(ddsFileDirectory);
 
-            using (var br = new BinaryReader(File.OpenRead(ddsFileDirectory.FullName)))
-            {
-                // skip DDS header
-                br.BaseStream.Seek(128, SeekOrigin.Begin);
-
-                // color data is always 512 (4w x 16h = 64 x 8bpp = 512)
-                // this reads 256 ushort values which is 256 x 2 = 512
-                for (var i = 0; i < 256; i++)
-                {
-                    colorSetData.Add(new Half(br.ReadUInt16()));
-                }
-            }
             var colorSetExtraData = new byte[32];
             // If the colorset size is 544, it contains extra data that must be imported
-            if (xivMtrl.ColorSetDataSize == 544)
+            try
             {
-                var flagsPath = Path.Combine(Path.GetDirectoryName(ddsFileDirectory.FullName), (Path.GetFileNameWithoutExtension(ddsFileDirectory.FullName) + ".dat"));
-
-                if (File.Exists(flagsPath))
-                {
-                    colorSetExtraData = File.ReadAllBytes(flagsPath);
-                    //using (var br = new BinaryReader(File.OpenRead(flagsPath)))
-                    //{
-                    //    // The extra data after the colorset is always 32 bytes 
-                    //    // This reads 16 ushort values which is 16 x 2 = 32
-                    //    for (var i = 0; i < 16; i++)
-                    //    {
-                    //        colorSetData.Add(new Half(br.ReadUInt16()));
-                    //    }
-                    //}
-                }
+                colorSetExtraData = GetColorsetExtraDataFromDDS(ddsFileDirectory);
+            } catch
+            {
+                colorSetExtraData = new byte[32];
             }
 
             // Replace the color set data with the imported data
             xivMtrl.ColorSetData = colorSetData;
             xivMtrl.ColorSetExtraData = colorSetExtraData;
+
+            if (xivMtrl.Unknown2.Length > 0)
+            {
+                // This byte enables the dye set if it's not already enabled.
+                xivMtrl.Unknown2[0] = 12;
+            }
 
             var mtrl = new Mtrl(_gameDirectory, xivMtrl.TextureTypePathList[0].DataFile, lang);
             return mtrl.CreateMtrlFile(xivMtrl, item);
@@ -1100,7 +1204,7 @@ namespace xivModdingFramework.Textures.FileTypes
         /// <summary>
         /// A dictionary containing the int represntations of known file types for DDS
         /// </summary>
-        private readonly Dictionary<int, XivTexFormat> DDSType = new Dictionary<int, XivTexFormat>
+        private static readonly Dictionary<int, XivTexFormat> DDSType = new Dictionary<int, XivTexFormat>
         {
             //DXT1
             {827611204, XivTexFormat.DXT1 },

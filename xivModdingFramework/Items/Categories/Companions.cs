@@ -20,6 +20,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using xivModdingFramework.Cache;
 using xivModdingFramework.Exd.Enums;
 using xivModdingFramework.Exd.FileTypes;
 using xivModdingFramework.General;
@@ -50,6 +51,11 @@ namespace xivModdingFramework.Items.Categories
             _xivLanguage = xivLanguage;
             _ex = new Ex(_gameDirectory, _xivLanguage);
         }
+        public async Task<List<XivMinion>> GetMinionList(string substring = null)
+        {
+            var cache = new XivCache(_gameDirectory, _xivLanguage);
+            return await cache.GetCachedMinionsList(substring);
+        }
 
         /// <summary>
         /// Gets the list to be displayed in the Minion category
@@ -59,7 +65,7 @@ namespace xivModdingFramework.Items.Categories
         /// The data within companion_0 exd contains a reference to the index for lookup in modelchara
         /// </remarks>
         /// <returns>A list containing XivMinion data</returns>
-        public async Task<List<XivMinion>> GetMinionList()
+        public async Task<List<XivMinion>> GetUncachedMinionList()
         {
             var minionLock = new object();
             var minionList = new List<XivMinion>();
@@ -79,8 +85,8 @@ namespace xivModdingFramework.Items.Categories
             {
                 var xivMinion = new XivMinion
                 {
-                    Category = XivStrings.Companions,
-                    ItemCategory = XivStrings.Minions
+                    PrimaryCategory = XivStrings.Companions,
+                    SecondaryCategory = XivStrings.Minions
                 };
 
                 int modelCharaIndex;
@@ -117,6 +123,12 @@ namespace xivModdingFramework.Items.Categories
             return minionList;
         }
 
+        public async Task<List<XivMount>> GetMountList(string substring = null, string category = null)
+        {
+            var cache = new XivCache(_gameDirectory, _xivLanguage);
+            return await cache.GetCachedMountList(substring, category);
+        }
+
         /// <summary>
         /// Gets the list to be displayed in the Mounts category
         /// </summary>
@@ -125,7 +137,7 @@ namespace xivModdingFramework.Items.Categories
         /// The data within mount_0 exd contains a reference to the index for lookup in modelchara
         /// </remarks>
         /// <returns>A list containing XivMount data</returns>
-        public async Task<List<XivMount>> GetMountList()
+        public async Task<List<XivMount>> GetUncachedMountList()
         {
             var mountLock = new object();
             var mountList = new List<XivMount>();
@@ -145,8 +157,8 @@ namespace xivModdingFramework.Items.Categories
             {
                 var xivMount = new XivMount
                 {
-                    Category = XivStrings.Companions,
-                    ItemCategory = XivStrings.Mounts,
+                    PrimaryCategory = XivStrings.Companions,
+                    SecondaryCategory = XivStrings.Mounts,
                 };
 
                 int modelCharaIndex;
@@ -184,6 +196,81 @@ namespace xivModdingFramework.Items.Categories
         }
 
         /// <summary>
+        /// Gets the list to be displayed in the Ornaments category
+        /// </summary>
+        /// <remarks>
+        /// The model data for the ornament is held separately in modelchara_0.exd
+        /// The data within Ornament exd contains a reference to the index for lookup in modelchara
+        /// The data format used by Ornaments is identical to mounts so XivMount can be used to store the data
+        /// </remarks>
+        /// <returns>A list containing XivMount data</returns>
+        public async Task<List<XivMount>> GetUncachedOrnamentList()
+        {
+            var mountLock = new object();
+            var ornamentList = new List<XivMount>();
+
+            // These are the offsets to relevant data
+            // These will need to be changed if data gets added or removed with a patch
+            const int dataLength = 28;
+            const int nameDataOffset = 6;
+            const int modelCharaIndexOffset = 16;
+
+            var ornamentEx = await _ex.ReadExData(XivEx.ornament);
+            var modelCharaEx = await XivModelChara.GetModelCharaData(_gameDirectory);
+
+            // Loops through all available mounts in the mount exd files
+            // At present only one file exists (mount_0)
+            await Task.Run(() => Parallel.ForEach(ornamentEx.Values, (ornament) =>
+            {
+                var xivOrnament = new XivMount
+                {
+                    PrimaryCategory = XivStrings.Companions,
+                    SecondaryCategory = XivStrings.Ornaments,
+                };
+
+                int modelCharaIndex;
+
+                //Big Endian Byte Order 
+                using (var br = new BinaryReaderBE(new MemoryStream(ornament)))
+                {
+                    br.BaseStream.Seek(nameDataOffset, SeekOrigin.Begin);
+                    var nameOffset = br.ReadInt16();
+
+                    br.BaseStream.Seek(modelCharaIndexOffset, SeekOrigin.Begin);
+                    modelCharaIndex = br.ReadInt16();
+
+                    br.BaseStream.Seek(dataLength, SeekOrigin.Begin);
+                    var nameString =
+                        CultureInfo.CurrentCulture.TextInfo.ToTitleCase(Encoding.UTF8
+                            .GetString(br.ReadBytes(nameOffset)).Replace("\0", ""));
+                    xivOrnament.Name = new string(nameString.Where(c => !char.IsControl(c)).ToArray());
+                }
+
+                if (modelCharaIndex == 0 || xivOrnament.Name.Equals("")) return;
+
+                // This will get the model data using the index obtained for the current mount
+                xivOrnament.ModelInfo = XivModelChara.GetModelInfo(modelCharaEx, modelCharaIndex);
+
+                lock (mountLock)
+                {
+                    ornamentList.Add(xivOrnament);
+                }
+            }));
+
+            ornamentList.Sort();
+
+            return ornamentList;
+        }
+
+
+        public async Task<List<XivPet>> GetPetList(string substring = null)
+        {
+            var cache = new XivCache(_gameDirectory, _xivLanguage);
+            return await cache.GetCachedPetList(substring);
+
+        }
+
+        /// <summary>
         /// Gets the list to be displayed in the Pets category
         /// </summary>
         /// <remarks>
@@ -191,7 +278,7 @@ namespace xivModdingFramework.Items.Categories
         /// Because of this, the Pet data is hardcoded until a better way of obtaining it is found.
         /// </remarks>
         /// <returns>A list containing XivMount data</returns>
-        public async Task<List<XivPet>> GetPetList()
+        public async Task<List<XivPet>> GetUncachedPetList()
         {
             var petLock = new object();
             var petList = new List<XivPet>();
@@ -230,21 +317,21 @@ namespace xivModdingFramework.Items.Categories
             {
                 var xivPet = new XivPet
                 {
-                    Category = XivStrings.Companions,
-                    ItemCategory = XivStrings.Pets,
+                    PrimaryCategory = XivStrings.Companions,
+                    SecondaryCategory = XivStrings.Pets,
                 };
 
                 // Gets the model info from modelchara for the given index
                 var modelInfo = XivModelChara.GetModelInfo(modelCharaEx, petIndex);
 
                 // Finds the name of the pet using the model ID and the above dictionary
-                if (petModelDictionary.ContainsKey(modelInfo.ModelID))
+                if (petModelDictionary.ContainsKey(modelInfo.PrimaryID))
                 {
-                    var petName = petModelDictionary[modelInfo.ModelID];
+                    var petName = petModelDictionary[modelInfo.PrimaryID];
 
-                    if (modelInfo.Variant > 1)
+                    if (modelInfo.ImcSubsetID > 1)
                     {
-                        petName += $" {modelInfo.Variant - 1}";
+                        petName += $" {modelInfo.ImcSubsetID - 1}";
                     }
 
                     xivPet.Name = petName;
@@ -252,13 +339,13 @@ namespace xivModdingFramework.Items.Categories
                 // For cases where there are separate pets under the same model ID with different body IDs
                 else
                 {
-                    switch (modelInfo.ModelID)
+                    switch (modelInfo.PrimaryID)
                     {
                         case 7001:
-                            xivPet.Name = modelInfo.Body == 1 ? XivStrings.Eos : XivStrings.Selene;
+                            xivPet.Name = modelInfo.SecondaryID == 1 ? XivStrings.Eos : XivStrings.Selene;
                             break;
                         case 7101:
-                            xivPet.Name = modelInfo.Body == 1
+                            xivPet.Name = modelInfo.SecondaryID == 1
                                 ? XivStrings.Rook_Autoturret
                                 : XivStrings.Bishop_Autoturret;
                             break;
@@ -283,16 +370,16 @@ namespace xivModdingFramework.Items.Categories
 
         public async Task<Dictionary<string, char[]>> GetDemiHumanMountTextureEquipPartList(IItemModel itemModel)
         {
-            var parts = new[] { 'a', 'b', 'c', 'd', 'e', 'f' };
+            var parts = Constants.Alphabet;
 
             var equipPartDictionary = new Dictionary<string, char[]>();
 
             var index = new Index(_gameDirectory);
             var imc = new Imc(_gameDirectory, XivDataFile._04_Chara);
-            var version = (await imc.GetImcInfo(itemModel, itemModel.ModelInfo)).Version.ToString().PadLeft(4, '0');
+            var version = (await imc.GetImcInfo(itemModel)).Variant.ToString().PadLeft(4, '0');
 
-            var id = itemModel.ModelInfo.ModelID.ToString().PadLeft(4, '0');
-            var bodyVer = itemModel.ModelInfo.Body.ToString().PadLeft(4, '0');
+            var id = itemModel.ModelInfo.PrimaryID.ToString().PadLeft(4, '0');
+            var bodyVer = itemModel.ModelInfo.SecondaryID.ToString().PadLeft(4, '0');
 
             var mtrlFolder = $"chara/demihuman/d{id}/obj/equipment/e{bodyVer}/material/v{version}";
 
@@ -321,8 +408,8 @@ namespace xivModdingFramework.Items.Categories
 
             var index = new Index(_gameDirectory);
 
-            var id = itemModel.ModelInfo.ModelID.ToString().PadLeft(4, '0');
-            var bodyVer = itemModel.ModelInfo.Body.ToString().PadLeft(4, '0');
+            var id = itemModel.ModelInfo.PrimaryID.ToString().PadLeft(4, '0');
+            var bodyVer = itemModel.ModelInfo.SecondaryID.ToString().PadLeft(4, '0');
 
             var mdlFolder = $"chara/demihuman/d{id}/obj/equipment/e{bodyVer}/model";
 

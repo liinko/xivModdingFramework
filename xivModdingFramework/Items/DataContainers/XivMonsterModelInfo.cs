@@ -14,24 +14,24 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-namespace xivModdingFramework.Textures.Enums
+using System;
+using xivModdingFramework.General;
+using xivModdingFramework.Items.Enums;
+
+namespace xivModdingFramework.Items.DataContainers
 {
     /// <summary>
-    /// Enum containing the Types of Textures
+    /// This class contains Model Information for an Item
+    /// Note - This is a partial class effectively, and 
+    /// cannot actually be resolved into a full model without
+    /// it's parent IIitem, as it lacks a slot identifier (top, dwn, glv, ...)
     /// </summary>
-    public enum XivTexType
+    public class XivMonsterModelInfo: XivModelInfo
     {
-        Diffuse,
-        Specular,
-        Normal,
-        Multi,
-        Mask,
-        Reflection,
-        Skin,
-        ColorSet,
-        Map,
-        Icon,
-        Vfx,
-        Other
+
+        /// <summary>
+        /// Model type as pulled from the ModelChara EXD.
+        /// </summary>
+        public XivItemType ModelType;
     }
 }
